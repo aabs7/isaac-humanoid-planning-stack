@@ -132,7 +132,7 @@ def save_snapshot(scene, outdir):
 
 # ---------------------------------------------------------------------------
 def main():
-    sim, scene = build_world(args.spawn, device=args.device, with_sensors=True)
+    sim, scene = build_world(args.spawn, device=args.device, sensors="full")
     robot = scene["robot"]
     controller = G1LocomotionPolicy(robot, sim.device)
     print(f"[g1] spawned at {tuple(args.spawn)} with lidar + RGB-D camera")

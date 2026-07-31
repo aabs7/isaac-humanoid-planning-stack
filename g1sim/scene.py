@@ -24,6 +24,22 @@ ROBOT_SPAWN_Z = 0.75
 # Body link the sensors mount on. The G1 has no head link; torso_link is the chest.
 SENSOR_MOUNT_LINK = "torso_link"
 
+# Default lidar targets: just the structural shell (fast to build) -- enough for
+# the light demos, which don't need to sense furniture.
+WALL_FLOOR_LIDAR_TARGETS = [APARTMENT_PRIM + "/Meshes/wall", APARTMENT_PRIM + "/Meshes/floor"]
+
+# Navigation lidar targets: shell + per-room furniture scopes, so the lidar senses
+# the obstacles A* must avoid (tables, sofas, counters, ...). Excludes the giant
+# "other" scope (windows/curtains) and ceiling. Builds in a few seconds; the
+# bedroom scope is high-poly so this costs ~10-20 s of one-time warp-mesh build.
+NAV_LIDAR_TARGETS = WALL_FLOOR_LIDAR_TARGETS + [
+    APARTMENT_PRIM + "/Meshes/livingroom_377",
+    APARTMENT_PRIM + "/Meshes/kitchen_753",
+    APARTMENT_PRIM + "/Meshes/bedroom_4089",
+    APARTMENT_PRIM + "/Meshes/bathroom_1361",
+    APARTMENT_PRIM + "/Meshes/balcony_117",
+]
+
 
 @configclass
 class ApartmentSceneCfg(InteractiveSceneCfg):
@@ -48,28 +64,20 @@ class ApartmentSceneCfg(InteractiveSceneCfg):
 
 
 @configclass
-class ApartmentSensorsSceneCfg(ApartmentSceneCfg):
-    """Same world, with a 3D lidar and a depth+RGB camera mounted on the robot's
-    torso. Kept as a subclass so the light locomotion demos don't pay the sensor
-    (and camera-rendering) cost unless they ask for it.
+class ApartmentLidarSceneCfg(ApartmentSceneCfg):
+    """Apartment + G1 with a torso-mounted 3D lidar (no camera). This is the
+    sensor set for mapping/navigation; kept separate so it doesn't pay the
+    camera-rendering cost (and needs no ``enable_cameras``)."""
 
-    Cameras require the app to be launched with ``enable_cameras=True``.
-    """
-
-    # 32-channel spinning 3D lidar, raycast against the whole (static) apartment.
+    # 32-channel spinning 3D lidar, raycast against the (static) apartment meshes.
     # MultiMesh (not plain RayCaster): plain RayCaster only supports a single mesh
     # prim, whereas the apartment is ~1354 meshes that must be gathered + merged.
     lidar = MultiMeshRayCasterCfg(
         prim_path="{ENV_REGEX_NS}/Robot/" + SENSOR_MOUNT_LINK,
         offset=MultiMeshRayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.25)),  # ~head height above torso
-        # Raycast against the structural shell (walls + floor). These are low-poly,
-        # so the warp mesh builds fast; merging *all* ~1354 apartment meshes (incl.
-        # high-poly clutter like books/cups) costs minutes + GBs at startup. Add
-        # furniture scopes here later if the robot needs to sense them.
-        mesh_prim_paths=[
-            APARTMENT_PRIM + "/Meshes/wall",
-            APARTMENT_PRIM + "/Meshes/floor",
-        ],
+        # Default: structural shell only (walls+floor), which builds fast. Pass
+        # NAV_LIDAR_TARGETS via make_scene_cfg/build_world to also sense furniture.
+        mesh_prim_paths=list(WALL_FLOOR_LIDAR_TARGETS),
         ray_alignment="yaw",                                  # keep scan level as torso pitches
         pattern_cfg=patterns.LidarPatternCfg(
             channels=32,
@@ -80,6 +88,11 @@ class ApartmentSensorsSceneCfg(ApartmentSceneCfg):
         max_distance=15.0,
         debug_vis=True,                                       # draws the point cloud in the viewport
     )
+
+
+@configclass
+class ApartmentSensorsSceneCfg(ApartmentLidarSceneCfg):
+    """Lidar scene plus a forward-facing RGB-D camera (needs ``enable_cameras``)."""
 
     # Forward-facing RGB-D camera.
     depth_camera = CameraCfg(
@@ -96,11 +109,16 @@ class ApartmentSensorsSceneCfg(ApartmentSceneCfg):
     )
 
 
-def make_scene_cfg(spawn_xy, cls=ApartmentSceneCfg, num_envs: int = 1, env_spacing: float = 2.0):
-    """Build a scene cfg of type ``cls`` with the robot placed at ``spawn_xy``."""
+def make_scene_cfg(spawn_xy, cls=ApartmentSceneCfg, num_envs: int = 1, env_spacing: float = 2.0,
+                   lidar_targets=None):
+    """Build a scene cfg of type ``cls`` with the robot placed at ``spawn_xy``.
+    ``lidar_targets`` (if given and the cfg has a lidar) overrides which meshes the
+    lidar raycasts against -- e.g. ``NAV_LIDAR_TARGETS`` to also sense furniture."""
     cfg = cls(num_envs=num_envs, env_spacing=env_spacing)
     x, y = spawn_xy
     cfg.robot.init_state.pos = (x, y, ROBOT_SPAWN_Z)  # keep the cfg's init orientation
+    if lidar_targets is not None and hasattr(cfg, "lidar"):
+        cfg.lidar.mesh_prim_paths = list(lidar_targets)
     return cfg
 
 
@@ -140,18 +158,30 @@ def prepare_apartment(stage):
     hide_ceiling(stage)
 
 
-def build_world(spawn_xy, device, dt: float = 1.0 / 200.0, with_sensors: bool = False):
+_SENSOR_VARIANTS = {
+    "none": ApartmentSceneCfg,           # robot only
+    "lidar": ApartmentLidarSceneCfg,     # + 3D lidar (no camera; no enable_cameras needed)
+    "full": ApartmentSensorsSceneCfg,    # + lidar + RGB-D camera (needs enable_cameras)
+}
+
+
+def build_world(spawn_xy, device, dt: float = 1.0 / 200.0, sensors: str = "none",
+                lidar_targets=None):
     """Load the environment and robot: create the sim, spawn the apartment + G1,
     apply the apartment fixups, and reset. Returns ``(sim, scene)``; the robot is
-    ``scene["robot"]``. With ``with_sensors=True`` the robot also carries a lidar
-    and an RGB-D camera (requires launching with ``enable_cameras=True``). This is
-    the single entry point every tool in the stack uses to stand up the world."""
+    ``scene["robot"]``.
+
+    ``sensors``: "none" (robot only), "lidar" (+3D lidar), or "full" (+lidar +
+    RGB-D camera, which needs ``enable_cameras=True``). ``lidar_targets`` (e.g.
+    ``NAV_LIDAR_TARGETS``) overrides which meshes the lidar senses. This is the
+    single entry point every tool in the stack uses to stand up the world."""
     sim = SimulationContext(sim_utils.SimulationCfg(dt=dt, device=device))
     x, y = spawn_xy
     sim.set_camera_view(eye=[x - 3.5, y - 3.5, 2.2], target=[x, y, 0.8])
+    # sim.set_camera_view(eye=[11.68, - 1.48, 3.82], target=[x, y, 0.8])
 
-    cls = ApartmentSensorsSceneCfg if with_sensors else ApartmentSceneCfg
-    scene = InteractiveScene(make_scene_cfg(spawn_xy, cls=cls))
+    cls = _SENSOR_VARIANTS[sensors]
+    scene = InteractiveScene(make_scene_cfg(spawn_xy, cls=cls, lidar_targets=lidar_targets))
     prepare_apartment(sim_utils.get_current_stage())
     sim.reset()
     return sim, scene
