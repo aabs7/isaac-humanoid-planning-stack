@@ -69,7 +69,7 @@ Get an end-to-end task working with *stubs* first, then deepen each piece.
 
 
 # Immediate next step:
-Phase 1: with a stub grasp — define the skill API and run *one* end-to-end task (e.g., "go to kitchen table → pick object → bring to living room") with a placeholder grasp. Of course the task depends on objects present in the environment so take a look at the semantic map.
+Phase 0: with a stub grasp — define the skill API and run *one* end-to-end task (e.g., "go to kitchen table → pick object → bring to living room") with a placeholder grasp. Of course the task depends on objects present in the environment so take a look at the semantic map.
 
 
 # Hard Problems (not to tackle right now)
