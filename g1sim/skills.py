@@ -13,9 +13,9 @@ Phase-0 scope (stubs, to be deepened later):
     planning stack).
   * ``scan()`` -- stub "perception": reports nearby objects from the ground-truth
     semantic map. Later: rotate in place and run detection on the RGB-D camera.
-  * ``pick`` / ``place`` -- *magic* grasp: ``pick`` marks the object held (a purely
-    logical carry -- the object's collider is left in place so it can't wedge the
-    walking robot), and ``place`` teleports it onto the destination surface/floor.
+  * ``pick`` / ``place`` -- *magic* grasp: ``pick`` disables the object's collision
+    and carries it at the robot's chest (its prim is driven there each tick), and
+    ``place`` re-enables collision and sets it down on the destination surface/floor.
     The authoritative result is the updated semantic-map state (held / relocated).
     Later: real IK grasp from the loco-manipulation env.
 
@@ -25,7 +25,6 @@ Import only after the sim app is launched.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
 from typing import Optional
 
 import isaaclab.sim as sim_utils
@@ -36,48 +35,19 @@ from g1sim.navigation import WaypointNavigator
 from g1sim.mapping import OccupancyGridMapper
 from g1sim.planning import plan_path
 from g1sim.scene import APARTMENT_PRIM
+from g1sim.skill_types import SkillResult, PICK_RADIUS, PLACE_RADIUS
 
 # Online-nav loop cadences (control ticks). Mirror the tuning in the standalone
 # map_and_navigate entry point so behavior is identical wherever goto runs.
 _INTEGRATE_EVERY = 3     # ticks between lidar fusions
 _REPLAN_EVERY = 30       # ticks between A* re-plans (~0.6 s)
 
-# Magic-grasp geometry. Reach is measured to the object's *footprint* (its
-# bounding box in XY), NOT its centre: a robot standing at a table's edge is ~0 m
-# from the table even though its centre is a metre away. Measured that way, 0.5 m
-# is an achievable, physically meaningful "at arm's reach" for accessible objects
-# (robot-radius inflation stops the base ~0.35 m off the furniture edge).
-PICK_RADIUS = 0.50        # robot must be within this of an object's footprint to pick (m)
-PLACE_RADIUS = 0.50       # robot must be within this of the place target to place (m)
+# Magic-grasp geometry (PICK_RADIUS / PLACE_RADIUS) now lives in
+# ``g1sim.skill_types`` so the sim-free planner + mock can share it; imported above.
 MAX_RECOVERIES = 8        # give up a goto after this many failed stuck-recoveries
 # Carry pose: where a held object rides relative to the robot base each tick.
 CARRY_FORWARD = 0.35      # metres in front of the base (out past the chest)
 CARRY_Z = 0.95            # world height it is carried at (~chest)
-
-
-@dataclass
-class SkillResult:
-    """Outcome of a skill call. Truthy iff the skill succeeded, so callers can do
-    ``if skills.pick("cup"):``. ``data`` carries skill-specific extras (e.g. scan
-    hits, the reso--- goto object ---
-[skill] goto_object(book_0010 in livingroom) -> approach (8.43, 0.42), stop within 0.5 m of object
-[OK ] goto_object: reached closest free point (7.98, 0.34); goal 0.45 m inside an obstacle
-
---- pick ---
-[FAIL] pick: book_0010 is 1.45 m away (> 0.7 m); goto it first
-[task] ABORT: 'pick' failed.
-lved object)."""
-    ok: bool
-    skill: str
-    detail: str = ""
-    data: dict = field(default_factory=dict)
-
-    def __bool__(self) -> bool:
-        return self.ok
-
-    def __str__(self) -> str:
-        tag = "OK " if self.ok else "FAIL"
-        return f"[{tag}] {self.skill}: {self.detail}"
 
 
 def _sim_prim_path(semantic_prim_path: str, apartment_prim: str = APARTMENT_PRIM) -> str:
@@ -214,9 +184,9 @@ class RobotSkills:
                                    f"reached closest free point ({px:.2f}, {py:.2f}); "
                                    f"goal {resid:.2f} m inside an obstacle")
 
-            # Stuck detection by *progress toward the goal* over ~1.5 s (catches
+            # Stuck detection by *progress toward the goal* over ~10 seconds (catches
             # oscillation, where the robot moves but nets no ground toward the goal).
-            if tick - stuck_since >= 75:
+            if tick - stuck_since >= 1.5 * CONTROL_HZ:
                 goal_dist = math.hypot(goal[0] - px, goal[1] - py)
                 if goal_dist > best_goal_dist - 0.15:
                     recoveries += 1
@@ -395,10 +365,12 @@ class RobotSkills:
             return SkillResult(False, "pick",
                                f"{o.name} is {d:.2f} m from reach (> {PICK_RADIUS} m); goto it first")
 
+        prev_room = o.room
         self.held = o
         self._carry_translate_op = self._grab_prim(o)   # also disables its collision
         self._carry_follow()                            # snap it to the chest immediately
-        self._log(f"[skill] pick({o.name}) OK (was in {o.room})")
+        self.smap.set_carried(o)                         # graph: it left its surface/room
+        self._log(f"[skill] pick({o.name}) OK (was in {prev_room})")
         return SkillResult(True, "pick", f"holding {o.name}", data={"object": o.name})
 
     def place(self, location) -> SkillResult:
@@ -426,12 +398,12 @@ class RobotSkills:
         self._set_prim_translate(self._carry_translate_op, drop)
         self._release_prim(o)
 
-        # Update the authoritative semantic-map state.
+        # Update the authoritative semantic-map state (pose, room, and 'on' edges):
+        # if placed on an object, `surf` becomes its new support; else free-standing.
         dz = drop[2] - o.position[2]
-        o.position = (drop[0], drop[1], drop[2])
-        o.bbox_min = (o.bbox_min[0], o.bbox_min[1], o.bbox_min[2] + dz)
-        o.bbox_max = (o.bbox_max[0], o.bbox_max[1], o.bbox_max[2] + dz)
-        self._reassign_room(o)
+        new_min = (o.bbox_min[0], o.bbox_min[1], o.bbox_min[2] + dz)
+        new_max = (o.bbox_max[0], o.bbox_max[1], o.bbox_max[2] + dz)
+        self.smap.relocate(o, drop, new_min, new_max, on_surface=surf)
 
         self.held = None
         self._carry_translate_op = None
@@ -457,17 +429,6 @@ class RobotSkills:
         if hasattr(location, "xy"):                            # a SemanticObject surface
             return location.xy, location.top_z, f"on {location.name}", location
         return None, None, str(location), None
-
-    def _reassign_room(self, o):
-        """Recompute which room an object is in after it moved (by polygon test)."""
-        for name, room in self.smap.rooms.items():
-            if room.contains(o.xy[0], o.xy[1]):
-                if o.name in self.smap.rooms.get(o.room).object_names:
-                    self.smap.rooms[o.room].object_names.remove(o.name)
-                o.room = name
-                if o.name not in room.object_names:
-                    room.object_names.append(o.name)
-                return
 
     # -- carried-prim manipulation ---------------------------------------
     # Visible magic carry: while held, the object's prim is driven to the robot's

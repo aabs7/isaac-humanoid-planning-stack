@@ -109,6 +109,29 @@ class ApartmentSensorsSceneCfg(ApartmentLidarSceneCfg):
     )
 
 
+@configclass
+class ApartmentRecordSceneCfg(ApartmentSensorsSceneCfg):
+    """Sensors scene (lidar + RGB-D) plus a free-floating "chase" camera used only for
+    video recording. It is NOT parented to the robot -- its world pose is driven each
+    tick (``Camera.set_world_poses_from_view``) to sit behind and above the robot and
+    look at it, giving a smooth third-person follow shot independent of torso sway.
+    Needs ``enable_cameras``."""
+
+    record_camera = CameraCfg(
+        prim_path="{ENV_REGEX_NS}/record_camera",   # env-root prim, not under the robot
+        update_period=0.0,                            # refresh every render; we re-aim it each tick
+        height=720,
+        width=960,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=18.0, focus_distance=400.0,
+            horizontal_aperture=20.955, clipping_range=(0.05, 60.0),
+        ),
+        # Initial offset is irrelevant -- the pose is overwritten each step.
+        offset=CameraCfg.OffsetCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0), convention="world"),
+    )
+
+
 def make_scene_cfg(spawn_xy, cls=ApartmentSceneCfg, num_envs: int = 1, env_spacing: float = 2.0,
                    lidar_targets=None):
     """Build a scene cfg of type ``cls`` with the robot placed at ``spawn_xy``.
@@ -162,6 +185,7 @@ _SENSOR_VARIANTS = {
     "none": ApartmentSceneCfg,           # robot only
     "lidar": ApartmentLidarSceneCfg,     # + 3D lidar (no camera; no enable_cameras needed)
     "full": ApartmentSensorsSceneCfg,    # + lidar + RGB-D camera (needs enable_cameras)
+    "record": ApartmentRecordSceneCfg,   # full + a chase camera for video (needs enable_cameras)
 }
 
 

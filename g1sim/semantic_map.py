@@ -102,6 +102,7 @@ class SemanticObject:
     # Scene-graph edges (filled in after all objects are read):
     supported_by: Optional[str] = None   # name of the surface this rests on ("on" edge)
     supports: list = field(default_factory=list)  # names of objects resting on this one
+    held: bool = False                   # True while carried by the robot (not in any room)
 
     @property
     def xy(self) -> tuple:
@@ -293,6 +294,80 @@ class SemanticMap:
         o = self.objects.get(name)
         return self.objects.get(o.supported_by) if (o and o.supported_by) else None
 
+    # ---- scene-graph mutation (pick/place keep the graph consistent) --------
+    # When the robot moves an object, the semantic map must reflect it: the object
+    # leaves its old surface and room and appears at its new one. These methods own
+    # that bookkeeping so both the real and mock skills stay consistent by calling
+    # them (rather than each hand-editing edges and room lists).
+    def reassign_room(self, o: SemanticObject) -> None:
+        """Recompute which room ``o`` is in after it moved (polygon test) and fix up
+        the room-membership lists. No-op if no room polygon contains it."""
+        for name, room in self.rooms.items():
+            if room.contains(o.xy[0], o.xy[1]):
+                old = self.rooms.get(o.room)
+                if old is not None and o.name in old.object_names:
+                    old.object_names.remove(o.name)
+                o.room = name
+                if o.name not in room.object_names:
+                    room.object_names.append(o.name)
+                return
+
+    def detach(self, o: SemanticObject) -> None:
+        """Break the ``on`` edge to whatever currently supports ``o``."""
+        if o.supported_by:
+            s = self.objects.get(o.supported_by)
+            if s is not None and o.name in s.supports:
+                s.supports.remove(o.name)
+            o.supported_by = None
+
+    def set_carried(self, o: SemanticObject) -> None:
+        """Mark ``o`` as picked up: detach it from its surface and remove it from its
+        room, so the graph no longer shows it where it was. While carried it belongs
+        to no room (``held=True``, ``room=None``)."""
+        self.detach(o)
+        r = self.rooms.get(o.room)
+        if r is not None and o.name in r.object_names:
+            r.object_names.remove(o.name)
+        o.room = None
+        o.held = True
+
+    def relocate(self, o: SemanticObject, position, bbox_min, bbox_max,
+                 on_surface: Optional[SemanticObject] = None) -> None:
+        """Set ``o`` down at a new pose and re-wire the graph: update its pose, set or
+        clear its ``on`` edge (``on_surface`` when placed on a surface, else free-
+        standing), reassign its room, and clear the carried flag."""
+        o.position = tuple(position)
+        o.bbox_min = tuple(bbox_min)
+        o.bbox_max = tuple(bbox_max)
+        o.held = False
+        self.detach(o)                              # clear any stale edge first
+        if on_surface is not None:
+            o.supported_by = on_surface.name
+            if o.name not in on_surface.supports:
+                on_surface.supports.append(o.name)
+        self.reassign_room(o)
+
+    def room_at(self, x: float, y: float) -> Optional[str]:
+        """Name of the room whose footprint contains ``(x, y)``, or ``None`` if the
+        point falls outside every room polygon (e.g. in a doorway/between rooms)."""
+        for name, room in self.rooms.items():
+            if room.contains(x, y):
+                return name
+        return None
+
+    def nearest_object(self, x: float, y: float, max_dist: float = 2.0):
+        """The object whose footprint is closest to ``(x, y)`` within ``max_dist`` m
+        (skipping anything currently held), or ``None``. Used to describe where the
+        robot is standing ("near dining_table")."""
+        best, nearest = max_dist, None
+        for o in self.objects.values():
+            if o.held:
+                continue
+            d = o.xy_dist(x, y)
+            if d <= best:
+                best, nearest = d, o
+        return nearest
+
     def reachable_in_room(self, room: str, from_xy: tuple) -> list:
         """Objects in ``room`` sorted by reach distance (to their footprint, not
         centre) from ``from_xy`` -- i.e. easiest-to-approach first."""
@@ -400,6 +475,10 @@ class SemanticMap:
         -> objects-on-it, with free-standing objects listed under the room. Pass
         ``room`` to print just one room."""
         lines = ["apartment"]
+        carried = [o for o in self.objects.values() if o.held]
+        if carried:
+            lines.append("  (carried by robot: "
+                         + ", ".join(f"{o.category} [{o.name}]" for o in carried) + ")")
         rooms = [room] if room else self.room_names()
         for rn in rooms:
             rn = _normalize_room(rn)
