@@ -184,7 +184,7 @@ class RobotSkills:
                                    f"reached closest free point ({px:.2f}, {py:.2f}); "
                                    f"goal {resid:.2f} m inside an obstacle")
 
-            # Stuck detection by *progress toward the goal* over ~10 seconds (catches
+            # Stuck detection by *progress toward the goal* over ~1.5 seconds (catches
             # oscillation, where the robot moves but nets no ground toward the goal).
             if tick - stuck_since >= 1.5 * CONTROL_HZ:
                 goal_dist = math.hypot(goal[0] - px, goal[1] - py)

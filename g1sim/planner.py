@@ -358,8 +358,6 @@ class Planner:
                     + "\n\nChoose the next single action.")
             messages = [{"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": user}]
-            print(user)
-
             action = self.llm.chat_json(messages, RESPONSE_SCHEMA)
             skill = action.get("skill", "")
             args = action.get("args") or {}

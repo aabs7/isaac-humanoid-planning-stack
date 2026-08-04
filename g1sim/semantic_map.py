@@ -98,7 +98,7 @@ class SemanticObject:
     position: tuple                  # world (x, y, z) of the object's origin
     bbox_min: tuple                  # world axis-aligned bounding box, min corner
     bbox_max: tuple                  # world axis-aligned bounding box, max corner
-    prim_path: str                   # source USD path (provenance/debugging)
+    prim_path: Optional[str] = None    # source USD path (provenance/debugging). For real perception, this is None.
     # Scene-graph edges (filled in after all objects are read):
     supported_by: Optional[str] = None   # name of the surface this rests on ("on" edge)
     supports: list = field(default_factory=list)  # names of objects resting on this one
