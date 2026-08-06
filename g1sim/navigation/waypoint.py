@@ -1,5 +1,5 @@
 """Point-to-point navigation for the G1: a closed-loop "go to (x, y)" controller
-layered on top of :class:`g1sim.locomotion.G1LocomotionPolicy`.
+layered on top of :class:`g1sim.sim.locomotion.G1LocomotionPolicy`.
 
 It's a unicycle controller: read the robot's world pose + heading, turn to face
 the goal, walk forward, and slow down as it arrives. The heading is derived from

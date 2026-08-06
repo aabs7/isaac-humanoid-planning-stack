@@ -1,4 +1,4 @@
-"""Structural invariants of a :class:`g1sim.semantic_map.SemanticMap` (a.k.a. the
+"""Structural invariants of a :class:`g1sim.perception.semantic_map.SemanticMap` (a.k.a. the
 scene graph), plus helpers for comparing whole graphs.
 
 :func:`assert_graph_consistent` is the workhorse: it encodes what must be true of

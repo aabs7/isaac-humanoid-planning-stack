@@ -46,7 +46,7 @@ class ApartmentSceneCfg(InteractiveSceneCfg):
     """Apartment (static reference geometry) + a Unitree G1 (29-DOF).
 
     The robot is the 29-DOF G1 because that is what the pretrained locomotion
-    policy in :mod:`g1sim.locomotion` was trained on. Lighting comes entirely
+    policy in :mod:`g1sim.sim.locomotion` was trained on. Lighting comes entirely
     from the apartment USD (a DistantLight "sun", a DomeLight, and per-room
     fixtures), so we add none of our own.
 

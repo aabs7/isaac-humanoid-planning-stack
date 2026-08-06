@@ -7,12 +7,15 @@
 # the goal, the current A* path, and the robot.
 #
 #   cd ~/isaac && source .venv/bin/activate
-#   python isaac_task_planning/map_and_navigate_g1_apartment.py --goal 3.5 -3.0
-#   python isaac_task_planning/map_and_navigate_g1_apartment.py --headless --goal 3.5 -3.0
+#   python isaac_task_planning/scripts/map_and_navigate_g1_apartment.py --goal 3.5 -3.0
+#   python isaac_task_planning/scripts/map_and_navigate_g1_apartment.py --headless --goal 3.5 -3.0
 
 import os
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("Optimistic online-mapping A* navigation for the G1.")
 parser.add_argument("--goal", type=float, nargs=2, default=[3.5, -3.0], metavar=("X", "Y"),
@@ -27,11 +30,11 @@ simulation_app = launch(args)
 import cv2
 import numpy as np
 
-from g1sim.scene import build_world, NAV_LIDAR_TARGETS
-from g1sim.locomotion import G1LocomotionPolicy
-from g1sim.navigation import WaypointNavigator
-from g1sim.mapping import OccupancyGridMapper
-from g1sim.planning import plan_path
+from g1sim.sim.scene import build_world, NAV_LIDAR_TARGETS
+from g1sim.sim.locomotion import G1LocomotionPolicy
+from g1sim.navigation.waypoint import WaypointNavigator
+from g1sim.perception.mapping import OccupancyGridMapper
+from g1sim.navigation.path_planning import plan_path
 
 INTEGRATE_EVERY = 3     # control ticks between lidar fusions
 REPLAN_EVERY = 30       # control ticks between A* re-plans (~0.6 s) -> reacts to new obstacles

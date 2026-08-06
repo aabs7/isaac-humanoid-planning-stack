@@ -12,7 +12,7 @@ Deliberately dependency-light: it needs only ``pxr`` (USD) + stdlib, NOT isaacla
 or a running sim. So it can be built and queried offline/on hardware, and is fast
 (a fraction of a second). Import it any time::
 
-    from g1sim.semantic_map import SemanticMap
+    from g1sim.perception.semantic_map import SemanticMap
     smap = SemanticMap.build()            # parse the default apartment USD
     smap.save("sensor_output/semantic_map.json")
     cups = smap.find("cup")               # every cup, nearest-first from a point

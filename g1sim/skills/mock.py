@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 
-from g1sim.skill_types import SkillResult, PICK_RADIUS, PLACE_RADIUS
+from g1sim.skills.types import SkillResult, PICK_RADIUS, PLACE_RADIUS
 
 
 class MockSkills:

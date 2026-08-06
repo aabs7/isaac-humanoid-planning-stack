@@ -1,18 +1,21 @@
 # Navigate the G1 to given (x, y) coordinates in the apartment using the
 # pretrained locomotion policy + a closed-loop waypoint controller.
-# Thin entry point -- navigation logic lives in g1sim/navigation.py.
+# Thin entry point -- navigation logic lives in g1sim/navigation/waypoint.py.
 #
 # Go to one point:
 #   cd ~/isaac && source .venv/bin/activate
-#   python isaac_task_planning/navigate_g1_apartment.py --goal 3.5 -3.0
+#   python isaac_task_planning/scripts/navigate_g1_apartment.py --goal 3.5 -3.0
 #
 # Chain several waypoints (repeat --goal):
-#   python isaac_task_planning/navigate_g1_apartment.py --goal 3.5 -3.0 --goal 10.0 -3.0
+#   python isaac_task_planning/scripts/navigate_g1_apartment.py --goal 3.5 -3.0 --goal 10.0 -3.0
 #
 # Headless (validate it arrives, then exit):
-#   python isaac_task_planning/navigate_g1_apartment.py --headless --goal 3.5 -3.0
+#   python isaac_task_planning/scripts/navigate_g1_apartment.py --headless --goal 3.5 -3.0
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("Navigate the G1 to (x, y) goal(s) in the apartment.")
 parser.add_argument("--goal", type=float, nargs=2, action="append", metavar=("X", "Y"),
@@ -25,9 +28,9 @@ args = parser.parse_args()
 simulation_app = launch(args)
 
 # ---- Imports that require the running sim app ----
-from g1sim.scene import build_world
-from g1sim.locomotion import G1LocomotionPolicy
-from g1sim.navigation import WaypointNavigator
+from g1sim.sim.scene import build_world
+from g1sim.sim.locomotion import G1LocomotionPolicy
+from g1sim.navigation.waypoint import WaypointNavigator
 
 CONTROL_HZ = 50  # policy control rate (1 tick = decimation sim steps)
 

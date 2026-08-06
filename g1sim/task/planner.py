@@ -2,7 +2,7 @@
 
 The planner is a thin, *sim-free* translation layer that sits above the skill seam:
 given a goal, the current semantic-map state, and the skill catalog, it asks a local
-LLM (via :mod:`g1sim.llm`) for one skill call at a time, executes it through whatever
+LLM (via :mod:`g1sim.task.llm`) for one skill call at a time, executes it through whatever
 "skills" object it is handed, reads the :class:`SkillResult`, and loops -- a ReAct
 loop. Because it drives an *interface* (``.smap``, ``.xy()``, ``.held`` + the verb
 methods), the identical planner runs against the sim-free ``MockSkills`` and the real
@@ -21,8 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from g1sim.llm import OllamaChat
-from g1sim.skill_types import SkillResult
+from g1sim.task.llm import OllamaChat
+from g1sim.skills.types import SkillResult
 
 # ---------------------------------------------------------------------------
 # Skill catalog -- the LLM-facing contract. One entry per verb the planner may

@@ -6,14 +6,17 @@ perception -- it turns ground-truth USD geometry into the "what is where" the
 skill layer and planner query.
 
     cd ~/isaac && source .venv/bin/activate
-    python isaac_task_planning/build_semantic_map.py
-    python isaac_task_planning/build_semantic_map.py --room kitchen   # list one room
-    python isaac_task_planning/build_semantic_map.py --find cup       # locate a category
+    python isaac_task_planning/scripts/build_semantic_map.py
+    python isaac_task_planning/scripts/build_semantic_map.py --room kitchen   # list one room
+    python isaac_task_planning/scripts/build_semantic_map.py --find cup       # locate a category
 """
 
 import argparse
 
-from g1sim.semantic_map import SemanticMap, DEFAULT_USD, DEFAULT_ROOMS_JSON
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.perception.semantic_map import SemanticMap, DEFAULT_USD, DEFAULT_ROOMS_JSON
 
 DEFAULT_OUT = "/home/abhish/isaac/isaac_task_planning/sensor_output/semantic_map.json"
 

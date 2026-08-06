@@ -1,7 +1,7 @@
 """The pose arithmetic ``place()`` applies to a dropped object.
 
-Kept here, mirroring ``RobotSkills.place`` (g1sim/skills.py) and ``MockSkills.place``
-(g1sim/mock_skills.py), so scene-graph tests exercise the *real* caller math rather
+Kept here, mirroring ``RobotSkills.place`` (g1sim/skills/robot.py) and ``MockSkills.place``
+(g1sim/skills/mock.py), so scene-graph tests exercise the *real* caller math rather
 than an idealized version -- including the quirk that those implementations shift
 only the bbox's z.
 """

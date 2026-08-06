@@ -7,15 +7,18 @@
 #
 # Interactive (GUI + keyboard):
 #   cd ~/isaac && source .venv/bin/activate
-#   python isaac_task_planning/sensors_g1_apartment.py
+#   python isaac_task_planning/scripts/sensors_g1_apartment.py
 #   Keys (focus main window): Up/Down move, Left/Right strafe, Z/X turn, L stop.
 #
 # Headless snapshot (saves the three images to --outdir and exits):
-#   python isaac_task_planning/sensors_g1_apartment.py --headless --snapshot 80
+#   python isaac_task_planning/scripts/sensors_g1_apartment.py --headless --snapshot 80
 
 import os
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("Teleop a G1 with lidar + RGB-D camera and 3 live views.")
 parser.add_argument("--snapshot", type=int, default=0, metavar="N",
@@ -34,10 +37,10 @@ simulation_app = launch(args)
 import cv2
 import numpy as np
 
-from g1sim.scene import build_world
-from g1sim.locomotion import G1LocomotionPolicy
+from g1sim.sim.scene import build_world
+from g1sim.sim.locomotion import G1LocomotionPolicy
 # Sensor->image helpers now live in a shared module (reused by the video recorder).
-from g1sim.sensor_viz import (DEPTH_MAX, LIDAR_RANGE, rgb_to_rgba, depth_to_rgba,
+from g1sim.viz.sensors import (DEPTH_MAX, LIDAR_RANGE, rgb_to_rgba, depth_to_rgba,
                               lidar_to_rgba, read_sensor_images)
 
 

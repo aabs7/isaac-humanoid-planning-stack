@@ -5,12 +5,15 @@
 #
 # Run:
 #   cd ~/isaac && source .venv/bin/activate
-#   python isaac_task_planning/spawn_g1_apartment.py
+#   python isaac_task_planning/scripts/spawn_g1_apartment.py
 #
 # Headless self-test:
-#   python isaac_task_planning/spawn_g1_apartment.py --headless --smoke 200
+#   python isaac_task_planning/scripts/spawn_g1_apartment.py --headless --smoke 200
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("Load the apartment + G1 and stand in place.")
 parser.add_argument("--smoke", type=int, default=0, metavar="N",
@@ -20,8 +23,8 @@ args = parser.parse_args()
 simulation_app = launch(args)
 
 # ---- Imports that require the running sim app ----
-from g1sim.scene import build_world
-from g1sim.locomotion import G1LocomotionPolicy
+from g1sim.sim.scene import build_world
+from g1sim.sim.locomotion import G1LocomotionPolicy
 
 
 def main():

@@ -3,11 +3,11 @@
 No Isaac, no GPU sim: builds the semantic map from the USD, stands up a virtual robot
 (MockSkills), and drives a natural-language goal through the planner. Use this to
 develop the planner and its prompts in seconds, then run the identical planner in the
-real sim with plan_task_g1_apartment.py.
+real sim with scripts/plan_task_g1_apartment.py.
 
     cd ~/isaac && source .venv/bin/activate
     ollama pull qwen2.5:7b-instruct          # one-time
-    python isaac_task_planning/plan_task_mock.py \
+    python isaac_task_planning/scripts/plan_task_mock.py \
         --goal "bring the chair from the balcony to the living room"
 
 Handy checks:
@@ -17,10 +17,13 @@ Handy checks:
 
 import argparse
 
-from g1sim.semantic_map import SemanticMap
-from g1sim.mock_skills import MockSkills
-from g1sim.llm import OllamaChat, DEFAULT_MODEL
-from g1sim.planner import Planner
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.perception.semantic_map import SemanticMap
+from g1sim.skills.mock import MockSkills
+from g1sim.task.llm import OllamaChat, DEFAULT_MODEL
+from g1sim.task.planner import Planner
 
 
 def main():

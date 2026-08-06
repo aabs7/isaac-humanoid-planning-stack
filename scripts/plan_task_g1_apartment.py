@@ -1,26 +1,29 @@
 """End-to-end LLM-planned task on the real G1 sim (Phase 1.1).
 
-Same stack as task_g1_apartment.py (USD scene graph, agile locomotion, optimistic
+Same stack as scripts/task_g1_apartment.py (USD scene graph, agile locomotion, optimistic
 online mapping + A* nav, magic grasp), but the skill sequence is produced by the LLM
 planner from a natural-language --goal instead of being hardcoded. The planner drives
 the real RobotSkills through the exact interface it drives MockSkills, so a goal proven
-in plan_task_mock.py runs here unchanged.
+in scripts/plan_task_mock.py runs here unchanged.
 
     cd ~/isaac && source .venv/bin/activate
     ollama pull qwen2.5:7b-instruct          # one-time, if not already
     # headless, the proven scenario:
-    python isaac_task_planning/plan_task_g1_apartment.py \
+    python isaac_task_planning/scripts/plan_task_g1_apartment.py \
         --goal "bring the chair from the balcony to the living room" --headless
     # watch it in the GUI (live occupancy/plan window):
-    python isaac_task_planning/plan_task_g1_apartment.py --goal "..."
+    python isaac_task_planning/scripts/plan_task_g1_apartment.py --goal "..."
     # record a follow-the-robot video (chase cam + sensor panels + occupancy map):
-    python isaac_task_planning/plan_task_g1_apartment.py --goal "..." --headless \
+    python isaac_task_planning/scripts/plan_task_g1_apartment.py --goal "..." --headless \
         --video isaac_task_planning/sensor_output/run.mp4
 """
 
 import os
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("LLM-planned pick-and-place task for the G1.")
 parser.add_argument("--goal", required=True, help="Natural-language task goal.")
@@ -44,16 +47,16 @@ if args.video:
 simulation_app = launch(args)
 
 # ---- imports that need the running sim app ----
-from g1sim.scene import build_world, NAV_LIDAR_TARGETS
-from g1sim.locomotion import G1LocomotionPolicy
-from g1sim.semantic_map import SemanticMap
-from g1sim.skills import RobotSkills
-from g1sim.llm import OllamaChat, DEFAULT_MODEL
-from g1sim.planner import Planner
+from g1sim.sim.scene import build_world, NAV_LIDAR_TARGETS
+from g1sim.sim.locomotion import G1LocomotionPolicy
+from g1sim.perception.semantic_map import SemanticMap
+from g1sim.skills.robot import RobotSkills
+from g1sim.task.llm import OllamaChat, DEFAULT_MODEL
+from g1sim.task.planner import Planner
 
 # Live map window + helpers (own module -- importing task_g1_apartment would re-run
 # its top-level arg parsing/launch against our argv).
-from g1sim.task_viz import MapWindow, save_map as _save_map
+from g1sim.viz.task_map import MapWindow, save_map as _save_map
 
 
 def main():
@@ -82,7 +85,7 @@ def main():
     # Optional video recorder (needs skills for pose/occupancy).
     recorder = None
     if args.video:
-        from g1sim.recorder import ChaseRecorder
+        from g1sim.viz.recorder import ChaseRecorder
         recorder = ChaseRecorder(sim, scene, skills, args.video, goal=args.goal,
                                  fps=args.video_fps)
 

@@ -7,7 +7,7 @@ Composites four sources into one 720p frame and writes an H.264 mp4:
     the sensor GUI shows), and
   * the live occupancy grid + A* plan.
 
-Usage (wired into ``plan_task_g1_apartment.py`` behind ``--video``): construct once with
+Usage (wired into ``scripts/plan_task_g1_apartment.py`` behind ``--video``): construct once with
 the running ``sim``/``scene``/``skills``, call :meth:`capture` every few control ticks
 (e.g. from the skills ``on_step`` hook), and :meth:`close` at the end.
 
@@ -23,8 +23,8 @@ import cv2
 import numpy as np
 import torch
 
-from g1sim.sensor_viz import read_sensor_images
-from g1sim.task_viz import occupancy_frame
+from g1sim.viz.sensors import read_sensor_images
+from g1sim.viz.task_map import occupancy_frame
 
 _FONT = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -77,7 +77,7 @@ class ChaseRecorder:
         try:
             import isaaclab.sim as sim_utils
             from pxr import Usd, UsdGeom
-            from g1sim.scene import APARTMENT_PRIM
+            from g1sim.sim.scene import APARTMENT_PRIM
             stage = sim_utils.get_current_stage()
             root = stage.GetPrimAtPath(APARTMENT_PRIM + "/Meshes/wall")
             if not root or not root.IsValid():

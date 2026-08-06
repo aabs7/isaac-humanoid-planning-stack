@@ -1,7 +1,7 @@
 """Sim-free skill primitives shared by the real skills, the mock skills, and the
 planner.
 
-These live *outside* :mod:`g1sim.skills` because that module imports ``isaaclab``
+These live *outside* :mod:`g1sim.skills.robot` because that module imports ``isaaclab``
 at import time (so it can only be imported after the sim app launches). The planner
 and the sim-free ``MockSkills`` need the result type and reach geometry without
 standing up Isaac, so the pieces with no sim dependency live here.

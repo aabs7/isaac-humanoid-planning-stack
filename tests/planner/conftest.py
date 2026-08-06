@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from g1sim.llm import OllamaChat
-from g1sim.mock_skills import MockSkills
-from g1sim.planner import Planner
+from g1sim.task.llm import OllamaChat
+from g1sim.skills.mock import MockSkills
+from g1sim.task.planner import Planner
 from tests.helpers.tiny_map import LIVINGROOM_START_XY
 
 

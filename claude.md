@@ -21,18 +21,18 @@ core lives in the `g1sim/` package; thin entry-point scripts drive it.
 
 - **Spawn + locomotion** — G1 (29-DOF) spawned in the apartment; walks via a
   pretrained "agile locomotion" policy. Command is `[vx, vy, wz, hip_height]`.
-  (`g1sim/locomotion.py`, `spawn_g1_apartment.py`, `teleop_g1_apartment.py`)
+  (`g1sim/sim/locomotion.py`, `scripts/spawn_g1_apartment.py`, `scripts/teleop_g1_apartment.py`)
 - **Sensors** — torso-mounted 3D lidar + forward RGB-D camera, with 3 live
-  in-GUI viewports (RGB, depth, lidar). (`g1sim/scene.py`, `sensors_g1_apartment.py`)
+  in-GUI viewports (RGB, depth, lidar). (`g1sim/sim/scene.py`, `scripts/sensors_g1_apartment.py`)
 - **Point-to-point navigation** — closed-loop unicycle controller to `(x, y)`.
-  (`g1sim/navigation.py`, `navigate_g1_apartment.py`)
+  (`g1sim/navigation/waypoint.py`, `scripts/navigate_g1_apartment.py`)
 - **Mapping + A\* obstacle avoidance** — 2D occupancy grid built from the robot's
   own sensors (SLAM's mapping half; ground-truth pose used as localization stand-in,
   NOT the apartment USD geometry), A* planning with robot-radius inflation, and
   **optimistic online navigation**: head straight for the goal treating unobserved
   space as free, map with the lidar while walking, re-plan around newly-sensed
   obstacles, plus a live in-GUI occupancy-map/goal/path window.
-  (`g1sim/mapping.py`, `g1sim/planning.py`, `map_and_navigate_g1_apartment.py`)
+  (`g1sim/perception/mapping.py`, `g1sim/navigation/path_planning.py`, `scripts/map_and_navigate_g1_apartment.py`)
 
 Key learnings are recorded in the project memory (`g1-apartment-stack`).
 
@@ -41,16 +41,15 @@ Key learnings are recorded in the project memory (`g1-apartment-stack`).
 ## Phase 0 - Semantic map builder from USD & skills test
 Get an end-to-end task working with *stubs* first, then deepen each piece.
 1. **Semantic map builder**: The USD of the apartment should be used to create a semantic map ("mug @ table @ livingroom @ (x, y)), ("livingroom @ (x, y)). I don't know the exact data-structure for this but semantic information should be generated for the environment using USD so that skills can be checked. Later on, in other phases, we use perception module to build this.
-2. **Skill API (`g1sim/skills.py`)** — expose composable verbs the planner calls: `goto(x, y)` (have it), `scan()`, `pick(object)`, `place(location)`; each returns success/failure. The modular `g1sim/` design already sets this up. For now, pick and place can be 'magic' pick where it just attaches the object to the arm.
+2. **Skill API (`g1sim/skills/robot.py`)** — expose composable verbs the planner calls: `goto(x, y)` (have it), `scan()`, `pick(object)`, `place(location)`; each returns success/failure. The modular `g1sim/` design already sets this up. For now, pick and place can be 'magic' pick where it just attaches the object to the arm.
 3. **Pick & place in sim** — re-enable `RigidBodyAPI` on the target object; start with a scripted/attach-based grasp to prove the loop before investing in real grasping. IsaacLab ships a **G1 loco-manipulation pick_place env** using the same agile lower-body policy + upper-body IK — mine it.
 
 ## Phase 1 — Close the full task loop in sim (build on the current stack)
 Get an end-to-end task working with *stubs* first, then deepen each piece.
-1. **Semantic perception** — run open-vocabulary detection (GroundingDINO+SAM, Detic,
+1. **Task planner** — an **LLM/VLM planner** a natural-language goal + semantic-map state, emits a skill sequence, re-plans on failure. Best fit for open-ended household tasks. Or a **PDDL** planner but somehow we have to make this fit open-ended household tasks.
+2. **Semantic perception** — run open-vocabulary detection (GroundingDINO+SAM, Detic,
    or a VLM) on the RGB-D camera and back-project detections into the map as *labeled
    object poses*, turning the occupancy grid into a **semantic map** ("mug @ (x, y)").
-2. **Task planner** — an **LLM/VLM planner** a natural-language goal + semantic-map state, emits a skill sequence, re-plans on
-   failure. Best fit for open-ended household tasks. Or a **PDDL** planner but somehow we have to make this fit open-ended household tasks.
 
 ## Phase 2 — Generalize to any household
 5. **Many environments** — use Infinigen / InteriorAgent (procedural scene generation,

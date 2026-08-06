@@ -6,10 +6,10 @@ from pathlib import Path
 # on sys.path when it is run directly. Put it there.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from g1sim.llm import OllamaChat
-from g1sim.planner import Planner, SKILLS, build_state_text, SYSTEM_PROMPT
-from g1sim.semantic_map import SemanticMap
-from g1sim.mock_skills import MockSkills
+from g1sim.task.llm import OllamaChat
+from g1sim.task.planner import Planner, SKILLS, build_state_text, SYSTEM_PROMPT
+from g1sim.perception.semantic_map import SemanticMap
+from g1sim.skills.mock import MockSkills
 
 
 def build_env(args):

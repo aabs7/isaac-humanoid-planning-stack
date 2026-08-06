@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from g1sim.semantic_map import Room, SemanticMap
+from g1sim.perception.semantic_map import Room, SemanticMap
 from tests.helpers.graph_invariants import (assert_graph_consistent,
                                             assert_pose_bbox_agree, graph_signature)
 from tests.helpers.place_math import drop_at, drop_on

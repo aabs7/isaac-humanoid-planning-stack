@@ -1,7 +1,7 @@
 """Live occupancy-map + A* plan visualization for the task entry points (GUI runs).
 
-Shared by both the scripted (``task_g1_apartment.py``) and LLM-planned
-(``plan_task_g1_apartment.py``) drivers. Kept in its own module (with no top-level
+Shared by both the scripted (``scripts/task_g1_apartment.py``) and LLM-planned
+(``scripts/plan_task_g1_apartment.py``) drivers. Kept in its own module (with no top-level
 argument parsing) so an entry point can import these helpers *without* re-triggering
 another script's ``parse_args()``/``launch()``. All heavy imports (omni.ui, cv2,
 numpy) are lazy inside the methods, so importing this module is cheap and safe.

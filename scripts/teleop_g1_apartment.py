@@ -3,7 +3,7 @@
 #
 # Run (GUI, keyboard):
 #   cd ~/isaac && source .venv/bin/activate
-#   python isaac_task_planning/teleop_g1_apartment.py
+#   python isaac_task_planning/scripts/teleop_g1_apartment.py
 #
 # Keyboard (focus the Isaac Sim window):
 #   Up / Down      : walk forward / backward    (also Numpad 8 / 2)
@@ -12,9 +12,12 @@
 #   L              : stop (zero the command)
 #
 # Headless self-test (no keyboard, walks forward, reports distance):
-#   python isaac_task_planning/teleop_g1_apartment.py --headless --smoke 250
+#   python isaac_task_planning/scripts/teleop_g1_apartment.py --headless --smoke 250
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("Keyboard-teleop a G1 in the apartment.")
 parser.add_argument("--smoke", type=int, default=0, metavar="N",
@@ -24,8 +27,8 @@ args = parser.parse_args()
 simulation_app = launch(args)
 
 # ---- Imports that require the running sim app ----
-from g1sim.scene import build_world
-from g1sim.locomotion import G1LocomotionPolicy
+from g1sim.sim.scene import build_world
+from g1sim.sim.locomotion import G1LocomotionPolicy
 
 
 def main():

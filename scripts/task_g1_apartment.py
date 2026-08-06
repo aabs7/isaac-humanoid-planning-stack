@@ -8,9 +8,9 @@ Phase 1 swaps it for an LLM/PDDL planner emitting the same skill calls.
 
     cd ~/isaac && source .venv/bin/activate
     # default: go to the balcony, pick a chair, carry it to the living room, headless
-    python isaac_task_planning/task_g1_apartment.py --headless
+    python isaac_task_planning/scripts/task_g1_apartment.py --headless
     # watch it in the GUI, custom task:
-    python isaac_task_planning/task_g1_apartment.py --pick-room kitchen --object fridge --return-to livingroom
+    python isaac_task_planning/scripts/task_g1_apartment.py --pick-room kitchen --object fridge --return-to livingroom
 
 The pick target is chosen as the most *reachable* object of ``--object`` in
 ``--pick-room`` (reach measured to its footprint). Cross-room nav uses optimistic
@@ -22,7 +22,10 @@ The occupancy/plan window (GUI runs only) shows the map the robot builds as it g
 
 import os
 
-from g1sim.launch import make_parser, launch
+# Make g1sim importable when this file is run directly (see scripts/_bootstrap.py).
+import _bootstrap  # noqa: F401
+
+from g1sim.sim.launch import make_parser, launch
 
 parser = make_parser("End-to-end round-trip pick-and-place task for the G1.")
 parser.add_argument("--pick-room", dest="pick_room", default="balcony",
@@ -41,10 +44,10 @@ args = parser.parse_args()
 simulation_app = launch(args)
 
 # ---- imports that need the running sim app ----
-from g1sim.scene import build_world, NAV_LIDAR_TARGETS
-from g1sim.locomotion import G1LocomotionPolicy
-from g1sim.semantic_map import SemanticMap
-from g1sim.skills import RobotSkills
+from g1sim.sim.scene import build_world, NAV_LIDAR_TARGETS
+from g1sim.sim.locomotion import G1LocomotionPolicy
+from g1sim.perception.semantic_map import SemanticMap
+from g1sim.skills.robot import RobotSkills
 
 
 def choose_target(smap, room, obj):

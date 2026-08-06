@@ -24,7 +24,7 @@ Layout (x right, y up)::
 
 from __future__ import annotations
 
-from g1sim.semantic_map import Room, SemanticMap, SemanticObject
+from g1sim.perception.semantic_map import Room, SemanticMap, SemanticObject
 
 LIVINGROOM_POLY = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]
 KITCHEN_POLY = [(5.0, 0.0), (9.0, 0.0), (9.0, 4.0), (5.0, 4.0)]

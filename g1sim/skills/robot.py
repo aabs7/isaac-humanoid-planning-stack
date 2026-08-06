@@ -30,12 +30,12 @@ from typing import Optional
 import isaaclab.sim as sim_utils
 from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
-from g1sim.locomotion import CONTROL_HZ
-from g1sim.navigation import WaypointNavigator
-from g1sim.mapping import OccupancyGridMapper
-from g1sim.planning import plan_path
-from g1sim.scene import APARTMENT_PRIM
-from g1sim.skill_types import SkillResult, PICK_RADIUS, PLACE_RADIUS
+from g1sim.sim.locomotion import CONTROL_HZ
+from g1sim.navigation.waypoint import WaypointNavigator
+from g1sim.perception.mapping import OccupancyGridMapper
+from g1sim.navigation.path_planning import plan_path
+from g1sim.sim.scene import APARTMENT_PRIM
+from g1sim.skills.types import SkillResult, PICK_RADIUS, PLACE_RADIUS
 
 # Online-nav loop cadences (control ticks). Mirror the tuning in the standalone
 # map_and_navigate entry point so behavior is identical wherever goto runs.
@@ -43,7 +43,7 @@ _INTEGRATE_EVERY = 3     # ticks between lidar fusions
 _REPLAN_EVERY = 30       # ticks between A* re-plans (~0.6 s)
 
 # Magic-grasp geometry (PICK_RADIUS / PLACE_RADIUS) now lives in
-# ``g1sim.skill_types`` so the sim-free planner + mock can share it; imported above.
+# ``g1sim.skills.types`` so the sim-free planner + mock can share it; imported above.
 MAX_RECOVERIES = 8        # give up a goto after this many failed stuck-recoveries
 # Carry pose: where a held object rides relative to the robot base each tick.
 CARRY_FORWARD = 0.35      # metres in front of the base (out past the chest)
