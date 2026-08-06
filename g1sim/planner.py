@@ -158,7 +158,12 @@ def ground(env, skill: str, args: dict):
 
     if skill == "goto_room":
         room = args.get("room")
-        if room and room in smap.room_names():
+        # Ask the resolver the *skill* uses, rather than re-deriving the test here, so
+        # grounding accepts exactly what goto_room can execute -- including spellings
+        # navigable_point() normalizes ("living room" -> livingroom). Grounding looser
+        # than the skill lets a hallucination through; stricter (as this was) fails
+        # actions that would have worked, costing the model a turn.
+        if isinstance(room, str) and smap.navigable_point(room) is not None:
             return True, None
         if room and _resolve_object_name(smap, room) is not None:  # gave an object
             return False, (f"'{room}' is an OBJECT, not a room. Use goto_object for it. "
@@ -180,7 +185,9 @@ def ground(env, skill: str, args: dict):
         loc = args.get("location")
         if not loc:
             return False, "place needs a 'location' (a room name or an object name)."
-        if loc in smap.room_names() or smap.get(loc) is not None:
+        # Mirror _resolve_place: an object name to stack on, else a room to drop in.
+        if isinstance(loc, str) and (smap.get(loc) is not None
+                                     or smap.navigable_point(loc) is not None):
             return True, None
         return (False, f"cannot place at '{loc}'. Use a room "
                        f"({', '.join(smap.room_names())}) or an existing object name.")
