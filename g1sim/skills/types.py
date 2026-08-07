@@ -13,12 +13,29 @@ from dataclasses import dataclass, field
 
 
 # Magic-grasp reach geometry. Reach is measured to an object's *footprint* (its XY
-# bounding box), NOT its centre: a robot at a table's edge is ~0 m from the table
-# even though its centre is a metre away. 0.5 m is then an achievable, physically
-# meaningful "at arm's reach". Shared so the mock enforces the same precondition the
-# real sim does (you must be at the object to pick/place).
-PICK_RADIUS = 0.50        # robot must be within this of an object's footprint to pick (m)
-PLACE_RADIUS = 0.50       # robot must be within this of the place target to place (m)
+# bounding box), NOT its centre: a robot at a table's edge is ~0 m from the table even
+# though its centre is a metre away. Shared so the mock enforces the same precondition
+# the real sim does (you must be at the object to pick/place).
+#
+# PICK_RADIUS is set by a constraint that has nothing to do with arm length. A small
+# object sits ON furniture, and the *furniture* is what the lidar sees, so A* inflates
+# it by the robot radius (0.35 m) -- the robot can never stand closer than that to the
+# table, however short the reach to the cup on top of it. Required reach is therefore
+# 0.35 m plus however far the object sits in from its surface's edge, which across this
+# apartment has a median of 0.47 m and a max of 0.77 m. At 0.50 only 11 of 55 objects
+# on surfaces were pickable at all; 0.80 makes 52 of 55 reachable with a 0.10 m margin
+# for grid quantization (0.05 m cells) and pose error. It is also still physically
+# defensible: the G1's arm reaches ~0.6-0.7 m from the torso, and this is measured to
+# the footprint rather than the centre.
+PICK_RADIUS = 0.80        # robot must be within this of an object's footprint to pick (m)
+
+# PLACE_RADIUS must NOT be smaller than PICK_RADIUS, however tempting: goto_object
+# stops the moment it is within PICK_RADIUS, so a tighter place threshold creates a
+# dead band where goto_object reports success and place refuses, telling the model to
+# "goto it first" -- advice it has already followed and will follow again, forever.
+# Reach is one arm, so it is one number; they are only separate to keep the call sites
+# readable.
+PLACE_RADIUS = 0.80       # robot must be within this of the place target to place (m)
 
 
 def dropped_pose(o, target_xy, surface_z: float):

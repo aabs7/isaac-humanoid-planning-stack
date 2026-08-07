@@ -58,3 +58,26 @@ def test_a_floor_place_moves_the_footprint_to_that_room(env, smap):
     assert smap.room_at(*cup.xy) == "bedroom", "footprint left outside the bedroom"
     assert cup.base_z == pytest.approx(0.0)
     assert_pose_bbox_agree(smap)
+
+
+def test_arriving_at_an_object_is_always_close_enough_to_place_on_it():
+    """``goto_object`` stops as soon as it is within PICK_RADIUS, so any place
+    threshold tighter than that opens a dead band: goto_object reports success, place
+    refuses with "goto it first", and the planner loops on advice it has already
+    taken. The two constants are coupled even though they read as independent."""
+    from g1sim.skills.types import PICK_RADIUS, PLACE_RADIUS
+    assert PLACE_RADIUS >= PICK_RADIUS, (
+        f"place needs {PLACE_RADIUS} m but goto_object only guarantees {PICK_RADIUS} m")
+
+
+def test_the_goto_object_then_place_sequence_closes(env, smap):
+    """End to end over the seam that deadlocked: approach a surface, then place on it
+    from wherever the approach happened to stop."""
+    env.goto_object("cup_0000")
+    assert env.pick("cup_0000").ok
+    env.goto_object("counter_0000")
+
+    result = env.place("counter_0000")
+
+    assert result.ok, result.detail
+    assert smap.get("cup_0000").supported_by == "counter_0000"
