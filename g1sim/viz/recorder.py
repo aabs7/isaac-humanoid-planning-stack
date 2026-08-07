@@ -158,7 +158,13 @@ class ChaseRecorder:
     # -- frame assembly --------------------------------------------------
     def capture(self):
         """Grab all sources, composite, and append one video frame. Then re-aim the
-        chase camera for the next render. Safe to call before sensors are ready."""
+        chase camera for the next render.
+
+        Safe to call before the sensors are ready, and safe to call *after*
+        :meth:`close` -- the sim keeps stepping while the GUI is open, so the per-tick
+        hook goes on firing long after the file has been flushed."""
+        if self._writer is None:
+            return
         main = self._main_rgb()
         if main is None:
             self.update_camera()

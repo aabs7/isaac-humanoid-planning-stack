@@ -111,6 +111,9 @@ def main():
         if recorder is not None:
             skills.idle(0.4)      # a beat on the final state, then flush the video
             recorder.close()
+            # Unhook it: the GUI loop below keeps stepping the sim (and firing
+            # on_step) for as long as the window is open, and the video is done.
+            recorder = None
 
     print(f"\n=== TASK {'SUCCEEDED' if outcome['success'] else 'FAILED'} ===")
     print(f"reason: {outcome['reason']}  ({len(outcome['steps'])} steps)")
