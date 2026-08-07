@@ -30,6 +30,12 @@ from g1sim.skills.types import SkillResult
 # ---------------------------------------------------------------------------
 SKILLS = ["scan", "goto_room", "goto_object", "pick", "place", "finish"]
 
+# Backstop for goal grounding only (the skills do not enforce it): anything bigger
+# than this is furniture, not cargo. Deliberately generous -- a chair is ~1.15 m and
+# must stay a legal target -- so it catches beds/sofas/curtains/fridges and leaves the
+# real work to the "is it holding other things" test in _carryable_targets.
+MAX_CARRY_DIM = 1.2       # metres, longest bounding-box edge
+
 SKILL_DOCS = [
     ("scan", "{}",
      "Look around and report objects near the robot. Free; use it to confirm what is here."),
@@ -293,8 +299,45 @@ class Planner:
             ans = self.llm.chat_json(msgs, self._GROUND_SCHEMA)
         except Exception:
             return [], None
-        targets = [t for t in ans.get("targets", []) if env.smap.get(t) is not None]
-        return targets, self._resolve_destination(env, ans.get("destination", ""))
+        destination = self._resolve_destination(env, ans.get("destination", ""))
+        return self._carryable_targets(env, ans.get("targets", []), destination), destination
+
+    def _carryable_targets(self, env, names, destination):
+        """Keep only the proposed targets the robot could actually pick up and carry.
+
+        The model reliably names the right object but often *also* names the furniture
+        it is sitting on -- "the lamp from the balcony table" comes back as
+        ``[table_lamp_0002, table_0001]`` despite the prompt saying not to. One bogus
+        target poisons the whole run: :meth:`_targets_satisfied` requires *every*
+        target to reach the destination, so an un-carryable one makes the goal
+        permanently unsatisfiable, the deterministic completion check can never fire,
+        and the task can only end by exhausting the step budget.
+
+        The load-bearing rule is "is this thing currently holding other things" -- that
+        is what identifies the surface the real target rests on. Size is only a
+        backstop for bare furniture (beds, sofas, curtains); it cannot do the main job,
+        because chairs (up to 1.15 m here) and side tables (up to 1.17 m) overlap.
+        """
+        smap = env.smap
+        kept, seen = [], set()
+        for name in names:
+            if name in seen:
+                continue
+            seen.add(name)
+            o = smap.get(name)
+            if o is None:
+                why = "not in the map"
+            elif name == destination:
+                why = "it is the destination, not cargo"
+            elif o.supports:
+                why = f"it is a surface holding {len(o.supports)} other object(s)"
+            elif o.max_dim > MAX_CARRY_DIM:
+                why = f"too big to carry ({o.max_dim:.2f} m > {MAX_CARRY_DIM} m)"
+            else:
+                kept.append(name)
+                continue
+            self._log(f"[grounding] dropped target {name!r}: {why}")
+        return kept
 
     def _resolve_destination(self, env, dest: str):
         """Normalize a destination string to a known room name or object name."""

@@ -151,3 +151,34 @@ def test_a_carried_object_is_announced_and_gone_from_its_old_room(env):
 
     assert "carrying 'cup_0000'" in text
     assert "cup_0000" not in text.split("room:livingroom", 1)[1]
+
+
+# ---------------------------------------------------------------------------
+# Goal grounding rejects targets the robot could not carry. One un-carryable
+# target makes the goal permanently unsatisfiable, because _targets_satisfied
+# requires every target to reach the destination.
+# ---------------------------------------------------------------------------
+def test_the_surface_a_target_rests_on_is_not_itself_a_target(planner, env):
+    """The observed failure: "the lamp from the balcony table" grounded to
+    [table_lamp_0002, table_0001] -- the lamp *and* the table holding it."""
+    kept = planner._carryable_targets(env, ["cup_0000", "dining_table_0000"], "kitchen")
+    assert kept == ["cup_0000"]
+
+
+@pytest.mark.parametrize("names, destination, expected", [
+    (["cup_0000"], "kitchen", ["cup_0000"]),                       # the ordinary case
+    (["cup_0000", "banana_9999"], "kitchen", ["cup_0000"]),        # not in the map
+    (["cup_0000", "counter_0000"], "counter_0000", ["cup_0000"]),  # the destination
+    (["bed_0000"], "kitchen", []),                                 # too big to carry
+    (["cup_0000", "cup_0000"], "kitchen", ["cup_0000"]),           # duplicate
+    (["book_0000", "cup_0000"], "kitchen", ["book_0000", "cup_0000"]),   # order kept
+])
+def test_target_filtering(planner, env, names, destination, expected):
+    assert planner._carryable_targets(env, names, destination) == expected
+
+
+def test_a_chair_is_still_a_legal_target(planner, env, smap):
+    """Size is only a backstop -- it must not swallow the things tasks actually move.
+    Chairs run to ~1.15 m in the real apartment, just under furniture like tables."""
+    assert smap.get("chair_0000").supports == []
+    assert planner._carryable_targets(env, ["chair_0000"], "kitchen") == ["chair_0000"]
