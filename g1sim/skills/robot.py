@@ -33,7 +33,7 @@ from pxr import Gf, Usd, UsdGeom, UsdPhysics
 from g1sim.sim.locomotion import CONTROL_HZ
 from g1sim.navigation.waypoint import WaypointNavigator
 from g1sim.perception.mapping import OccupancyGridMapper
-from g1sim.navigation.path_planning import plan_path
+from g1sim.navigation.path_planning import path_remaining, plan_path
 from g1sim.sim.scene import APARTMENT_PRIM
 from g1sim.skills.types import (SkillResult, PICK_RADIUS, PLACE_RADIUS,
                                 dropped_pose)
@@ -45,7 +45,16 @@ _REPLAN_EVERY = 30       # ticks between A* re-plans (~0.6 s)
 
 # Magic-grasp geometry (PICK_RADIUS / PLACE_RADIUS) now lives in
 # ``g1sim.skills.types`` so the sim-free planner + mock can share it; imported above.
-MAX_RECOVERIES = 8        # give up a goto after this many failed stuck-recoveries
+MAX_RECOVERIES = 8        # give up a goto after this many failed stall-recoveries
+
+# Stall detection. Progress is measured as remaining *path* length (path_remaining),
+# never as straight-line distance to the goal: A* routes around furniture, so the
+# straight line legitimately stays flat or grows while the robot is doing exactly the
+# right thing. The clock is also paused while the robot is turning in place, which by
+# design translates nowhere.
+_STALL_WINDOW = int(1.5 * CONTROL_HZ)   # ticks of *translating* before judging progress
+_STALL_EPS = 0.15                       # metres of path that must be consumed in a window
+_TURN_GRACE = int(3.0 * CONTROL_HZ)     # a 180-degree turn takes ~2.5 s at wz_max
 # Carry pose: where a held object rides relative to the robot base each tick.
 CARRY_FORWARD = 0.35      # metres in front of the base (out past the chest)
 CARRY_Z = 0.95            # world height it is carried at (~chest)
@@ -147,8 +156,9 @@ class RobotSkills:
         Early-stop options (used by ``goto_object`` to halt at arm's reach without
         burrowing into furniture inflation): ``reach_xy`` succeeds within
         ``reach_dist`` of a point; ``reach_obj`` succeeds within ``reach_dist`` of a
-        SemanticObject's *footprint*. A stuck-detector backs the robot out and
-        re-plans if it stops making progress (doorways, tight corners)."""
+        SemanticObject's *footprint*. A stall-detector backs the robot out and
+        re-plans if it stops making progress *along its path* (doorways, tight
+        corners) -- see the notes on ``_STALL_*`` above."""
         goal = (float(x), float(y))
         self.last_goal = goal
         if self.mapper is None:
@@ -158,8 +168,10 @@ class RobotSkills:
         self.last_free, self.last_waypoints = free, waypoints
         max_ticks = int(timeout_s * CONTROL_HZ)
         replans = 0
-        best_goal_dist = math.hypot(goal[0] - self.xy()[0], goal[1] - self.xy()[1])
+        px, py, _ = self.pose()
+        best_remaining = path_remaining(waypoints, px, py, goal)
         stuck_since = 0
+        turn_ticks = 0
         recoveries = 0
         for tick in range(max_ticks):
             if not self._running():
@@ -171,9 +183,15 @@ class RobotSkills:
                 self.last_free = free
                 if wps:
                     waypoints, replans = wps, replans + 1
+                    # A re-plan around a newly-sensed obstacle is often LONGER than the
+                    # route it replaces. That is new information, not a stall, so
+                    # re-baseline rather than judge the robot against the old estimate.
+                    nx_, ny_, _ = self.pose()
+                    lengthened = path_remaining(waypoints, nx_, ny_, goal)
+                    best_remaining = max(best_remaining, lengthened)
             self.last_waypoints = waypoints
 
-            px, py = self.xy()
+            px, py, heading = self.pose()
             if self._reached(px, py, reach_xy, reach_obj, reach_dist):
                 return SkillResult(True, "goto", f"within {reach_dist:.2f} m of target at ({px:.2f}, {py:.2f})")
             reach = waypoints[-1] if waypoints else goal
@@ -185,27 +203,42 @@ class RobotSkills:
                                    f"reached closest free point ({px:.2f}, {py:.2f}); "
                                    f"goal {resid:.2f} m inside an obstacle")
 
-            # Stuck detection by *progress toward the goal* over ~1.5 seconds (catches
-            # oscillation, where the robot moves but nets no ground toward the goal).
-            if tick - stuck_since >= 1.5 * CONTROL_HZ:
-                goal_dist = math.hypot(goal[0] - px, goal[1] - py)
-                if goal_dist > best_goal_dist - 0.15:
+            target = (waypoints[1] if len(waypoints) > 1
+                      else (waypoints[0] if waypoints else goal))
+
+            # Turning in place is deliberate, not a stall: the controller zeroes vx
+            # above `face_first`, so a 180-degree turn spends ~2.5 s translating
+            # nowhere. Pause the stall clock while genuinely rotating, with a grace cap
+            # so a yaw oscillation is still caught eventually.
+            yaw_err = math.atan2(target[1] - py, target[0] - px) - heading
+            yaw_err = math.atan2(math.sin(yaw_err), math.cos(yaw_err))
+            turn_ticks = turn_ticks + 1 if abs(yaw_err) > self.nav.face_first else 0
+            if 0 < turn_ticks <= _TURN_GRACE:
+                stuck_since = tick
+
+            # Stall detection on progress *along the path* (see path_remaining): the
+            # straight line to the goal is the wrong yardstick, because routing around
+            # furniture holds it flat -- or grows it -- while the robot does exactly
+            # the right thing.
+            if tick - stuck_since >= _STALL_WINDOW:
+                remaining = path_remaining(waypoints, px, py, goal)
+                if remaining > best_remaining - _STALL_EPS:
                     recoveries += 1
                     if recoveries > MAX_RECOVERIES:
                         return SkillResult(False, "goto",
                                            f"stuck at ({px:.2f}, {py:.2f}) after {recoveries} recoveries")
-                    self._recover(toward=goal)
+                    self._recover(toward=target)     # back toward the PLAN, not the goal
                     wps, free, _ = plan_path(self.mapper, self.xy(), goal)
                     self.last_free = free
                     if wps:
                         waypoints = wps
+                    rx_, ry_, _ = self.pose()
+                    best_remaining = path_remaining(waypoints, rx_, ry_, goal)
                 else:
-                    recoveries = 0        # made progress; reset the recovery budget
-                best_goal_dist = min(best_goal_dist, goal_dist)
+                    recoveries = 0            # real progress; refill the recovery budget
+                    best_remaining = remaining
                 stuck_since = tick
 
-            target = (waypoints[1] if len(waypoints) > 1
-                      else (waypoints[0] if waypoints else goal))
             command, _, _ = self.nav.command_to(target)
             self.step(command)
         return SkillResult(False, "goto", f"timeout after {timeout_s:.0f}s at ({px:.2f}, {py:.2f})")

@@ -117,6 +117,25 @@ def simplify(free, path):
     return out
 
 
+def path_remaining(waypoints, px, py, goal_xy):
+    """How far the robot still has to *travel*: from ``(px, py)`` to its current target
+    waypoint, plus the rest of the polyline.
+
+    This is the honest progress metric for a robot following a plan. Straight-line
+    distance to the goal is not: A* routes around furniture, so going the right way
+    round a table legitimately holds that distance flat, or increases it, while the
+    robot is making perfect progress. Falls back to the straight line when there is no
+    plan to follow.
+    """
+    if len(waypoints) < 2:                 # no plan (or we are standing on its only cell)
+        return ((goal_xy[0] - px) ** 2 + (goal_xy[1] - py) ** 2) ** 0.5
+    tail = waypoints[1:]                   # waypoints[0] is the robot's own cell
+    total = ((tail[0][0] - px) ** 2 + (tail[0][1] - py) ** 2) ** 0.5
+    for a, b in zip(tail, tail[1:]):
+        total += ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+    return total
+
+
 def plan_path(mapper, start_xy, goal_xy, robot_radius_m=0.35):
     """High-level: inflate the sensed obstacles, snap start/goal to free space,
     A*, simplify. Returns (waypoints_world, free_grid, info) where waypoints are
