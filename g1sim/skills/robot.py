@@ -35,7 +35,8 @@ from g1sim.navigation.waypoint import WaypointNavigator
 from g1sim.perception.mapping import OccupancyGridMapper
 from g1sim.navigation.path_planning import plan_path
 from g1sim.sim.scene import APARTMENT_PRIM
-from g1sim.skills.types import SkillResult, PICK_RADIUS, PLACE_RADIUS
+from g1sim.skills.types import (SkillResult, PICK_RADIUS, PLACE_RADIUS,
+                                dropped_pose)
 
 # Online-nav loop cadences (control ticks). Mirror the tuning in the standalone
 # map_and_navigate entry point so behavior is identical wherever goto runs.
@@ -392,17 +393,14 @@ class RobotSkills:
                                f"place target is {d:.2f} m from reach (> {PLACE_RADIUS} m); goto it first")
 
         o = self.held
-        # Keep the object's origin-to-base offset so its base rests on the surface.
-        base_offset = o.position[2] - o.bbox_min[2]
-        drop = (target_xy[0], target_xy[1], surface_z + base_offset)
+        # Drop pose (base resting on the surface, bbox translated with it) -- shared
+        # with MockSkills.place so the two cannot diverge.
+        drop, new_min, new_max = dropped_pose(o, target_xy, surface_z)
         self._set_prim_translate(self._carry_translate_op, drop)
         self._release_prim(o)
 
         # Update the authoritative semantic-map state (pose, room, and 'on' edges):
         # if placed on an object, `surf` becomes its new support; else free-standing.
-        dz = drop[2] - o.position[2]
-        new_min = (o.bbox_min[0], o.bbox_min[1], o.bbox_min[2] + dz)
-        new_max = (o.bbox_max[0], o.bbox_max[1], o.bbox_max[2] + dz)
         self.smap.relocate(o, drop, new_min, new_max, on_surface=surf)
 
         self.held = None

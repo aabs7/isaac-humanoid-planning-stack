@@ -21,6 +21,29 @@ PICK_RADIUS = 0.50        # robot must be within this of an object's footprint t
 PLACE_RADIUS = 0.50       # robot must be within this of the place target to place (m)
 
 
+def dropped_pose(o, target_xy, surface_z: float):
+    """Where object ``o`` ends up when ``place`` sets it down at ``target_xy`` on a
+    surface whose top is at ``surface_z``. Returns ``(position, bbox_min, bbox_max)``
+    ready for :meth:`SemanticMap.relocate`.
+
+    The object's origin-to-base offset is preserved, so its base rests exactly on the
+    surface, and the **whole bounding box translates with the origin**. That last part
+    is load-bearing: reach is measured to an object's footprint (``xy_dist``), and
+    ``goto_object`` derives its approach point from the same box, so a bbox left
+    behind at the old location sends the robot to the wrong room to pick the object
+    up again.
+
+    Shared by both skill implementations -- this arithmetic used to be copied into
+    each, which is how they came to disagree with reality in the same way twice.
+    """
+    base_offset = o.position[2] - o.bbox_min[2]
+    position = (float(target_xy[0]), float(target_xy[1]), surface_z + base_offset)
+    delta = tuple(position[i] - o.position[i] for i in range(3))
+    return (position,
+            tuple(o.bbox_min[i] + delta[i] for i in range(3)),
+            tuple(o.bbox_max[i] + delta[i] for i in range(3)))
+
+
 @dataclass
 class SkillResult:
     """Outcome of a skill call. Truthy iff the skill succeeded, so callers can do

@@ -1,20 +1,11 @@
-"""Fixtures for the planner tests."""
+"""Fixtures for the planner tests. (``smap`` and ``env`` come from tests/conftest.py.)"""
 
 from __future__ import annotations
 
 import pytest
 
 from g1sim.task.llm import OllamaChat
-from g1sim.skills.mock import MockSkills
 from g1sim.task.planner import Planner
-from tests.helpers.tiny_map import LIVINGROOM_START_XY
-
-
-@pytest.fixture
-def env(smap):
-    """A virtual robot in the synthetic apartment -- the same skills object the
-    planner drives in the sim, minus Isaac."""
-    return MockSkills(smap, start_xy=LIVINGROOM_START_XY, verbose=False)
 
 
 @pytest.fixture

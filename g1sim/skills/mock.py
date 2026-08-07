@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import math
 
-from g1sim.skills.types import SkillResult, PICK_RADIUS, PLACE_RADIUS
+from g1sim.skills.types import (SkillResult, PICK_RADIUS, PLACE_RADIUS,
+                                dropped_pose)
 
 
 class MockSkills:
@@ -101,14 +102,10 @@ class MockSkills:
                                f"place target is {d:.2f} m from reach (> {PLACE_RADIUS} m); "
                                f"go to it first")
         o = self.held
-        # Same drop math + map mutation as RobotSkills.place: keep the object's
-        # origin-to-base offset so its base rests on the surface, shift its bbox, and
-        # let the map re-wire room + 'on' edges (surf is the surface when placing ON one).
-        base_offset = o.position[2] - o.bbox_min[2]
-        drop = (target_xy[0], target_xy[1], surface_z + base_offset)
-        dz = drop[2] - o.position[2]
-        new_min = (o.bbox_min[0], o.bbox_min[1], o.bbox_min[2] + dz)
-        new_max = (o.bbox_max[0], o.bbox_max[1], o.bbox_max[2] + dz)
+        # Same drop math + map mutation as RobotSkills.place (both call dropped_pose),
+        # then let the map re-wire room + 'on' edges -- surf is the surface when
+        # placing ON one, None for a floor drop.
+        drop, new_min, new_max = dropped_pose(o, target_xy, surface_z)
         self.smap.relocate(o, drop, new_min, new_max, on_surface=surf)
         self.held = None
         return SkillResult(True, "place", f"{o.name} placed {where}",

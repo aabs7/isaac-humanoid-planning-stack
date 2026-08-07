@@ -361,15 +361,12 @@ def test_placing_between_rooms_should_keep_the_graph_consistent(smap):
     assert_graph_consistent(smap, "after placing between rooms")
 
 
-@pytest.mark.xfail(strict=True, reason="place() shifts only the bbox's z, so after a "
-                                       "cross-room place the footprint is left at the "
-                                       "old location (skills.py / mock_skills.py)")
-def test_place_on_a_distant_surface_should_move_the_footprint_too(smap):
-    """``place`` translates ``position`` fully but the bbox only in z, so a cup moved
-    from the livingroom table to the kitchen counter keeps a livingroom footprint.
-    Everything reach-related reads that footprint -- ``xy_dist``, ``nearest_object``,
-    ``goto_object``'s approach point -- so the robot would walk to the wrong room to
-    pick the cup back up."""
+def test_place_on_a_distant_surface_moves_the_footprint_too(smap):
+    """The bounding box must travel with the origin. Everything reach-related reads
+    the footprint -- ``xy_dist``, ``nearest_object``, ``goto_object``'s approach
+    point -- so a box left behind at the old location sends the robot to the wrong
+    room to pick the object up again. (Regression: ``place`` used to shift the bbox
+    in z only.)"""
     cup, counter = smap.get("cup_0000"), smap.get("counter_0000")
     smap.set_carried(cup)
 
