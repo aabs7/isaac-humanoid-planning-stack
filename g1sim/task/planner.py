@@ -229,14 +229,28 @@ class Planner:
     """Drives a goal to completion through a skills object via a ReAct loop."""
 
     def __init__(self, llm: Optional[OllamaChat] = None, *, max_steps: int = 15,
-                 verbose: bool = True):
+                 verbose: bool = True, on_action=None):
         self.llm = llm or OllamaChat()
         self.max_steps = max_steps
         self.verbose = verbose
+        # Optional observer, called as on_action(step, skill, args, thought, result)
+        # once when an action starts (result=None) and again when it finishes. Lets a
+        # caller mirror the plan somewhere -- the video overlay uses it to print what
+        # action the robot is executing.
+        self.on_action = on_action
 
     def _log(self, msg: str):
         if self.verbose:
             print(msg)
+
+    def _notify(self, step, skill, args, thought, result=None):
+        """Fire the observer, never letting it break the run."""
+        if self.on_action is None:
+            return
+        try:
+            self.on_action(step, skill, args, thought, result)
+        except Exception as e:      # pragma: no cover - a display must not kill a task
+            self._log(f"    (on_action observer raised: {e})")
 
     # A crisp yes/no completion judge, asked in ISOLATION (not inside the noisy action
     # loop). A small model reliably answers "is this goal satisfied?" from the current
@@ -413,6 +427,7 @@ class Planner:
             args = action.get("args") or {}
             thought = action.get("thought", "")
             self._log(f"\n[{i+1}] think: {thought}\n    -> {skill}({args})")
+            self._notify(i + 1, skill, args, thought)      # starting
 
             if skill == "finish":
                 success = bool(args.get("success", True))
@@ -427,6 +442,7 @@ class Planner:
             else:
                 res = _execute(env, skill, args)
             self._log(f"    {res}")
+            self._notify(i + 1, skill, args, thought, res)   # finished
             steps.append(Step(skill, args, thought, res))
 
             # Loop-breaker: if the model keeps emitting the SAME action -- even a

@@ -58,6 +58,10 @@ class ChaseRecorder:
         self.cam_margin, self.min_dist = cam_margin, min_dist
         self.cam = scene[cam_key] if cam_key in scene.sensors else None
         self.device = sim.device
+        # Latest planner action, fed by set_action() (wired to Planner.on_action).
+        self.action = ""
+        self.action_state = ""
+        self.thought = ""
         self._walls = self._build_wall_boxes()
         self.frames = 0
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -194,19 +198,46 @@ class ChaseRecorder:
             frame[y0:y1, self.main_w:] = cell
         return frame
 
+    # -- planner mirror ---------------------------------------------------
+    def set_action(self, step, skill, args, thought="", result=None):
+        """Show the planner's current action. Wire to ``Planner.on_action``; called
+        once when a step starts (``result=None``) and again when it finishes."""
+        shown = ", ".join(f"{v}" for v in (args or {}).values())
+        self.action = f"[{step}] {skill}({shown})"
+        self.action_state = "running..." if result is None else (
+            "OK" if result.ok else f"FAILED: {result.detail}")
+        self.thought = thought or ""
+
     def _caption(self, frame):
-        """Translucent top bar on the main view: goal + robot room/held state."""
+        """Translucent top bar on the main view: the goal, what the planner is doing
+        right now and why, and the robot's own room/held state."""
         x, y, _ = self.skills.pose()
         room = self.skills.smap.room_at(x, y) or "between rooms"
         held = self.skills.held.name if self.skills.held is not None else "nothing"
-        line2 = f"in {room}  |  holding: {held}"
-        bar = frame[:56, :self.main_w].copy()
-        cv2.rectangle(bar, (0, 0), (self.main_w, 56), (0, 0, 0), -1)
-        cv2.addWeighted(bar, 0.5, frame[:56, :self.main_w], 0.5, 0, frame[:56, :self.main_w])
-        cv2.putText(frame, f"GOAL: {self.goal}"[:78], (10, 22), _FONT, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.putText(frame, line2[:78], (10, 44), _FONT, 0.5, (180, 220, 255), 1, cv2.LINE_AA)
+
+        if self.action_state.startswith("FAILED"):
+            action_rgb = (255, 130, 130)
+        elif self.action_state == "OK":
+            action_rgb = (150, 255, 150)
+        else:
+            action_rgb = (255, 225, 130)
+
+        h = 96
+        bar = frame[:h, :self.main_w].copy()
+        cv2.rectangle(bar, (0, 0), (self.main_w, h), (0, 0, 0), -1)
+        cv2.addWeighted(bar, 0.55, frame[:h, :self.main_w], 0.45, 0, frame[:h, :self.main_w])
+
+        def put(text, y_px, scale, rgb):
+            cv2.putText(frame, text[:96], (10, y_px), _FONT, scale, rgb, 1, cv2.LINE_AA)
+
+        put(f"GOAL: {self.goal}", 22, 0.58, (255, 255, 255))
+        put(f"{self.action}  {self.action_state}" if self.action else "(planning...)",
+            44, 0.52, action_rgb)
+        put(f"think: {self.thought}" if self.thought else "", 64, 0.40, (170, 170, 170))
+        put(f"in {room}  |  holding: {held}", 86, 0.45, (180, 220, 255))
 
     def close(self):
+        """Flush and finalize the mp4. Idempotent; :meth:`capture` no-ops afterwards."""
         if self._writer is not None:
             self._writer.close()
             self._writer = None

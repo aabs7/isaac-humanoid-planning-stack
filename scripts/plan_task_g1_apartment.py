@@ -102,8 +102,14 @@ def main():
 
     skills.idle(0.5)   # let the balance policy settle before walking
 
+    # Mirror each planner action onto the video overlay. The planner stays sim-free:
+    # it just calls a function it was handed.
+    def on_action(step, skill, skill_args, thought, result):
+        if recorder is not None:
+            recorder.set_action(step, skill, skill_args, thought, result)
+
     print(f"\n=== LLM TASK: {args.goal} ===\n")
-    planner = Planner(llm, max_steps=args.max_steps)
+    planner = Planner(llm, max_steps=args.max_steps, on_action=on_action)
     outcome = {"success": False, "reason": "run did not complete", "steps": []}
     try:
         outcome = planner.run(skills, args.goal)
