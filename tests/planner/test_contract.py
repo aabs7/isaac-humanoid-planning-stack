@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from g1sim.task.planner import (RESPONSE_SCHEMA, SKILL_DOCS, SKILLS, _execute,
+from g1sim.task.llm_based.planner import (RESPONSE_SCHEMA, SKILL_DOCS, SKILLS, _execute,
                            build_state_text, ground)
 from g1sim.skills.types import SkillResult
 

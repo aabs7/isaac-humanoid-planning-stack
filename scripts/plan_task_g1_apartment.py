@@ -51,8 +51,8 @@ from g1sim.sim.scene import build_world, NAV_LIDAR_TARGETS
 from g1sim.sim.locomotion import G1LocomotionPolicy
 from g1sim.perception.semantic_map import SemanticMap
 from g1sim.skills.robot import RobotSkills
-from g1sim.task.llm import OllamaChat, DEFAULT_MODEL
-from g1sim.task.planner import Planner
+from g1sim.task.llm_based.llm import OllamaChat, DEFAULT_MODEL
+from g1sim.task.llm_based.planner import Planner
 
 # Live map window + helpers (own module -- importing task_g1_apartment would re-run
 # its top-level arg parsing/launch against our argv).

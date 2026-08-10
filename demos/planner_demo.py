@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-from g1sim.task.planner import ground, Planner
+from g1sim.task.llm_based.planner import ground, Planner
 from llm_usage_demo import build_env
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from g1sim.task.llm import OllamaChat
-from g1sim.task.planner import Planner
+from g1sim.task.llm_based.llm import OllamaChat
+from g1sim.task.llm_based.planner import Planner
 
 
 @pytest.fixture

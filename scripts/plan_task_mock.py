@@ -22,8 +22,8 @@ import _bootstrap  # noqa: F401
 
 from g1sim.perception.semantic_map import SemanticMap
 from g1sim.skills.mock import MockSkills
-from g1sim.task.llm import OllamaChat, DEFAULT_MODEL
-from g1sim.task.planner import Planner
+from g1sim.task.llm_based.llm import OllamaChat, DEFAULT_MODEL
+from g1sim.task.llm_based.planner import Planner
 
 
 def main():
