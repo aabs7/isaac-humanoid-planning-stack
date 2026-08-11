@@ -32,10 +32,19 @@ def inflate(occupied: np.ndarray, radius_cells: int) -> np.ndarray:
 
 def nearest_free(free: np.ndarray, cell):
     """Snap ``cell`` to the closest traversable cell (start/goal may land in an
-    inflated obstacle or unmapped noise)."""
-    i, j = cell
+    inflated obstacle or unmapped noise).
+
+    ``cell`` is clamped into the grid first, because a robot that has wandered off the
+    mapped area produces an out-of-range cell and indexing with one is worse than an
+    error: a moderately negative index *wraps* to a row on the opposite side of the map
+    and returns a confidently wrong plan, while a large one raises IndexError and kills
+    the run. Clamping turns both into "plan from the nearest edge cell", which is the
+    honest reading of a start position outside the map."""
+    h, w = free.shape
+    i = min(max(int(cell[0]), 0), h - 1)
+    j = min(max(int(cell[1]), 0), w - 1)
     if free[i, j]:
-        return cell
+        return (i, j)
     _, (ii, jj) = distance_transform_edt(~free, return_indices=True)
     return int(ii[i, j]), int(jj[i, j])
 
