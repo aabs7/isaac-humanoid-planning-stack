@@ -28,13 +28,12 @@ import math
 from typing import Optional
 
 import isaaclab.sim as sim_utils
-from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 from g1sim.sim.locomotion import CONTROL_HZ
 from g1sim.navigation.waypoint import WaypointNavigator
 from g1sim.perception.mapping import OccupancyGridMapper
 from g1sim.navigation.path_planning import next_target, path_remaining, plan_path
-from g1sim.sim.scene import APARTMENT_PRIM
+from g1sim.skills.grasp import MagicGrasp
 from g1sim.skills.types import (SkillResult, PICK_RADIUS, PLACE_RADIUS,
                                 dropped_pose)
 
@@ -55,20 +54,6 @@ MAX_RECOVERIES = 8        # give up a goto after this many failed stall-recoveri
 _STALL_WINDOW = int(1.5 * CONTROL_HZ)   # ticks of *translating* before judging progress
 _STALL_EPS = 0.15                       # metres of path that must be consumed in a window
 _TURN_GRACE = int(3.0 * CONTROL_HZ)     # a 180-degree turn takes ~2.5 s at wz_max
-# Carry pose: where a held object rides relative to the robot base each tick.
-CARRY_FORWARD = 0.35      # metres in front of the base (out past the chest)
-CARRY_Z = 0.95            # world height it is carried at (~chest)
-
-
-def _sim_prim_path(semantic_prim_path: str, apartment_prim: str = APARTMENT_PRIM) -> str:
-    """Translate a semantic-map prim path (parsed from the raw USD, rooted at
-    ``/Root``) to its on-stage path. The apartment USD is referenced under
-    ``apartment_prim`` and its default prim ``/Root`` collapses onto that target,
-    so ``/Root/Meshes/...`` lives at ``<apartment_prim>/Meshes/...``."""
-    suffix = semantic_prim_path
-    if suffix.startswith("/Root"):
-        suffix = suffix[len("/Root"):]
-    return apartment_prim + suffix
 
 
 class RobotSkills:
@@ -76,7 +61,8 @@ class RobotSkills:
     into the verb set a planner drives. One instance per running world."""
 
     def __init__(self, sim, scene, controller, semantic_map, *,
-                 app=None, use_lidar: bool = True, on_step=None, verbose: bool = True):
+                 app=None, use_lidar: bool = True, on_step=None, verbose: bool = True,
+                 grasp=None):
         self.sim = sim
         self.app = app                    # simulation_app, for the GUI-close check
         self.scene = scene
@@ -89,9 +75,10 @@ class RobotSkills:
         self.verbose = verbose
         self.stage = sim_utils.get_current_stage()
 
-        # Carry state (magic grasp).
         self.held = None                  # SemanticObject being carried, or None
-        self._carry_translate_op = None   # cached xformOp:translate of the carried prim
+        # *How* it is held is a strategy (see g1sim.skills.grasp): magic teleport by
+        # default, so every existing caller behaves exactly as before.
+        self.grasp = grasp if grasp is not None else MagicGrasp(self.stage)
 
         # Exposed for a live map window: last plan the online goto produced.
         self.last_free = None
@@ -117,11 +104,14 @@ class RobotSkills:
         """Advance one control tick: run the policy for ``command`` and step the
         sim ``decimation`` times, then update the carried object and any GUI hook."""
         self.controller.step(command)
+        # Any joint targets the grasp strategy owns (a real arm) must be written before
+        # they are flushed to the sim; the magic carry writes none.
+        self.grasp.on_control(self)
         for _ in range(self.controller.decimation):
             self.scene.write_data_to_sim()
             self.sim.step()
             self.scene.update(self.sim.get_physics_dt())
-        self._carry_follow()
+        self.grasp.on_tick(self)
         if self.on_step is not None:
             self.on_step(self)
 
@@ -412,12 +402,17 @@ class RobotSkills:
                                f"{o.name} is {d:.2f} m from reach (> {PICK_RADIUS} m); goto it first")
 
         prev_room = o.room
+        # `held` is set before attaching because the magic carry's first snap reads it.
         self.held = o
-        self._carry_translate_op = self._grab_prim(o)   # also disables its collision
-        self._carry_follow()                            # snap it to the chest immediately
+        out = self.grasp.attach(self, o)
+        if not out.ok:
+            self.held = None
+            return SkillResult(False, "pick", out.detail or f"could not grasp {o.name}",
+                               data={"object": o.name, **out.data})
         self.smap.set_carried(o)                         # graph: it left its surface/room
         self._log(f"[skill] pick({o.name}) OK (was in {prev_room})")
-        return SkillResult(True, "pick", f"holding {o.name}", data={"object": o.name})
+        return SkillResult(True, "pick", f"holding {o.name}",
+                           data={"object": o.name, **out.data})
 
     def place(self, location) -> SkillResult:
         """Set the held object down at ``location``: a room name (dropped on the floor
@@ -441,19 +436,24 @@ class RobotSkills:
         # Drop pose (base resting on the surface, bbox translated with it) -- shared
         # with MockSkills.place so the two cannot diverge.
         drop, new_min, new_max = dropped_pose(o, target_xy, surface_z)
-        self._set_prim_translate(self._carry_translate_op, drop)
-        self._release_prim(o)
+        out = self.grasp.release(self, o, drop)
+        if not out.ok:
+            return SkillResult(False, "place", out.detail or f"could not release {o.name}",
+                               data={"object": o.name, **out.data})
 
         # Update the authoritative semantic-map state (pose, room, and 'on' edges):
         # if placed on an object, `surf` becomes its new support; else free-standing.
         self.smap.relocate(o, drop, new_min, new_max, on_surface=surf)
 
         self.held = None
-        self._carry_translate_op = None
+        # `at` is where the object *is*: the strategy's measured position when it has one,
+        # the predicted drop otherwise. A magic release reports the drop it was given, so
+        # this is identical to `drop` on that path.
+        at = out.position if out.position is not None else drop
         self._log(f"[skill] place({where}) OK: {o.name} now at "
-                  f"({drop[0]:.2f}, {drop[1]:.2f}, {drop[2]:.2f}) in {o.room}")
+                  f"({at[0]:.2f}, {at[1]:.2f}, {at[2]:.2f}) in {o.room}")
         return SkillResult(True, "place", f"{o.name} placed at {where}",
-                           data={"object": o.name, "at": drop})
+                           data={"object": o.name, "at": at, **out.data})
 
     # -- place-location resolution ---------------------------------------
     def _resolve_place(self, location):
@@ -473,65 +473,7 @@ class RobotSkills:
             return location.xy, location.top_z, f"on {location.name}", location
         return None, None, str(location), None
 
-    # -- carried-prim manipulation ---------------------------------------
-    # Visible magic carry: while held, the object's prim is driven to the robot's
-    # chest every tick (setting its translate op moves the render). Its collision is
-    # disabled on pick so the following collider can't wedge the walking robot (an
-    # enabled follower 0.35 m ahead becomes an obstacle it can never pass), and
-    # re-enabled on place so the object rests solidly again.
-    def _grab_prim(self, o):
-        """Fetch the object's ``xformOp:translate`` op (so carry/place can drive it)
-        and disable its collision. Returns the op, or None if the prim/op can't be
-        found (carry then stays logical -- the semantic-map relocation still happens)."""
-        prim = self.stage.GetPrimAtPath(_sim_prim_path(o.prim_path))
-        if not prim or not prim.IsValid():
-            self._log(f"[skill] warn: carried prim not found on stage for {o.name}")
-            return None
-        self._set_collision(prim, False)
-        xf = UsdGeom.Xformable(prim)
-        for op in xf.GetOrderedXformOps():
-            if op.GetOpName() == "xformOp:translate":
-                return op
-        return xf.AddTranslateOp()  # no translate op authored; add one so we can drive it
-
-    def _release_prim(self, o):
-        prim = self.stage.GetPrimAtPath(_sim_prim_path(o.prim_path))
-        if prim and prim.IsValid():
-            self._set_collision(prim, True)
-
-    def _set_collision(self, prim, enabled: bool):
-        """Toggle collision on every collider under ``prim`` (both the UsdPhysics and
-        PhysX schemas, whichever is authored)."""
-        try:
-            from pxr import PhysxSchema
-        except Exception:
-            PhysxSchema = None
-        for p in Usd.PrimRange(prim):
-            if p.HasAPI(UsdPhysics.CollisionAPI):
-                try:
-                    UsdPhysics.CollisionAPI(p).CreateCollisionEnabledAttr(enabled)
-                except Exception:
-                    pass
-            if PhysxSchema is not None and p.HasAPI(PhysxSchema.PhysxCollisionAPI):
-                try:
-                    p.GetAttribute("physxCollision:collisionEnabled").Set(enabled)
-                except Exception:
-                    pass
-
-    def _carry_follow(self):
-        """Drive the held object to the robot's chest this tick (render follows)."""
-        if self.held is None or self._carry_translate_op is None:
-            return
-        x, y, h = self.pose()
-        self._set_prim_translate(self._carry_translate_op,
-                                 (x + CARRY_FORWARD * math.cos(h),
-                                  y + CARRY_FORWARD * math.sin(h), CARRY_Z))
-
-    @staticmethod
-    def _set_prim_translate(op, xyz):
-        if op is None:
-            return
-        try:
-            op.Set(Gf.Vec3d(float(xyz[0]), float(xyz[1]), float(xyz[2])))
-        except Exception:
-            pass
+    # How the object is actually held now lives in :mod:`g1sim.skills.grasp` -- see
+    # ``self.grasp``. Everything above this line (reach preconditions, place-target
+    # resolution, the drop arithmetic, the semantic-map mutations) is shared by every
+    # strategy and stays here on purpose.
