@@ -1,2 +1,6 @@
 __pycache__/
 sensor_output
+
+# third_party/railroad is a git *submodule* (see .gitmodules), so it must NOT be ignored:
+# an ignored path cannot be added as one. Its own build artifacts (the pybind11 .so) are
+# covered by that repo's .gitignore, not ours.
