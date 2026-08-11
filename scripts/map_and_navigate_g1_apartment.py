@@ -34,7 +34,7 @@ from g1sim.sim.scene import build_world, NAV_LIDAR_TARGETS
 from g1sim.sim.locomotion import G1LocomotionPolicy
 from g1sim.navigation.waypoint import WaypointNavigator
 from g1sim.perception.mapping import OccupancyGridMapper
-from g1sim.navigation.path_planning import plan_path
+from g1sim.navigation.path_planning import next_target, plan_path
 
 INTEGRATE_EVERY = 3     # control ticks between lidar fusions
 REPLAN_EVERY = 30       # control ticks between A* re-plans (~0.6 s) -> reacts to new obstacles
@@ -140,8 +140,10 @@ def main():
             print(f"[nav] reached ({px_:.2f}, {py_:.2f}) after {n_replans} re-plans{note}")
             done = True
 
-        # Head toward the next waypoint; continuous re-planning handles progress.
-        target = waypoints[1] if len(waypoints) > 1 else (waypoints[0] if waypoints else goal_xy)
+        # Head toward the first waypoint we have not already reached. Steering at a
+        # waypoint inside the controller's arrival radius makes it stand still, and
+        # re-planning does not reliably shift that target -- see next_target.
+        target = next_target(waypoints, px_, py_, goal_xy, nav.goal_tol)
         command, _, _ = nav.command_to(target)
 
         if tick % 50 == 0:

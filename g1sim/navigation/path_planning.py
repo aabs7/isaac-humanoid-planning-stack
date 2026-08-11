@@ -9,6 +9,7 @@ obstacles (inflated by the robot radius) block the plan.
 from __future__ import annotations
 
 import heapq
+import math
 
 import numpy as np
 from scipy.ndimage import binary_dilation, distance_transform_edt
@@ -134,6 +135,36 @@ def path_remaining(waypoints, px, py, goal_xy):
     for a, b in zip(tail, tail[1:]):
         total += ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
     return total
+
+
+def next_target(waypoints, px, py, goal_xy, reached_tol):
+    """The waypoint to steer at: the first one the robot has not effectively reached.
+
+    A path follower has to *advance* past waypoints it has arrived at. Steering at one the
+    robot is already sitting on is worse than useless: the unicycle controller reports
+    ``arrived`` inside its ``goal_tol`` and emits its **stand-still** command, so the robot
+    halts in the middle of a path it has not finished.
+
+    Re-planning does not rescue this, which is what makes the bug so confusing to watch.
+    Where waypoints are far apart the next re-plan hands back a distant one and the robot
+    moves off after a brief stutter. But where they are *dense* -- a doorway, where the
+    0.35 m obstacle inflation leaves a channel one or two cells wide, so string-pulling
+    loses line of sight immediately and can only keep near-adjacent cells -- every re-plan
+    produces another waypoint within the arrival radius, and the robot stands there until
+    the stall detector decides it is stuck and backs it out. The symptom is a robot that
+    stops dead partway along a long route, waits, reverses, and then carries on.
+
+    ``reached_tol`` must be the follower's own arrival radius (``WaypointNavigator.goal_tol``);
+    that is exactly the distance at which the controller stops commanding motion. Falls back
+    to the final waypoint when every remaining one has been reached -- the caller's own
+    arrival check then ends the run.
+    """
+    for wp in waypoints[1:]:
+        if math.hypot(wp[0] - px, wp[1] - py) > reached_tol:
+            return wp
+    if waypoints:
+        return waypoints[-1]
+    return goal_xy
 
 
 def plan_path(mapper, start_xy, goal_xy, robot_radius_m=0.35):

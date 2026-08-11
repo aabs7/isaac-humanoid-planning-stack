@@ -33,7 +33,7 @@ from pxr import Gf, Usd, UsdGeom, UsdPhysics
 from g1sim.sim.locomotion import CONTROL_HZ
 from g1sim.navigation.waypoint import WaypointNavigator
 from g1sim.perception.mapping import OccupancyGridMapper
-from g1sim.navigation.path_planning import path_remaining, plan_path
+from g1sim.navigation.path_planning import next_target, path_remaining, plan_path
 from g1sim.sim.scene import APARTMENT_PRIM
 from g1sim.skills.types import (SkillResult, PICK_RADIUS, PLACE_RADIUS,
                                 dropped_pose)
@@ -203,8 +203,10 @@ class RobotSkills:
                                    f"reached closest free point ({px:.2f}, {py:.2f}); "
                                    f"goal {resid:.2f} m inside an obstacle")
 
-            target = (waypoints[1] if len(waypoints) > 1
-                      else (waypoints[0] if waypoints else goal))
+            # The first waypoint the robot has NOT already reached. Steering at one it is
+            # sitting on makes the controller emit its stand-still command, halting the
+            # robot mid-path -- see next_target for why re-planning does not fix that.
+            target = next_target(waypoints, px, py, goal, self.nav.goal_tol)
 
             # Turning in place is deliberate, not a stall: the controller zeroes vx
             # above `face_first`, so a 180-degree turn spends ~2.5 s translating
