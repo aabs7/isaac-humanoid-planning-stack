@@ -303,15 +303,24 @@ class RobotSkills:
             return found
         return self.smap.nearest(obj, self.xy())
 
-    def goto_object(self, obj, *, standoff: float = 0.45, goal_tol: float = 0.3, **kw) -> SkillResult:
+    def goto_object(self, obj, *, standoff: float = 0.45, goal_tol: float = 0.3,
+                    reach: float = PICK_RADIUS, **kw) -> SkillResult:
         """Navigate up to ``obj`` (by name, category, or SemanticObject) and face it,
-        stopping within ``PICK_RADIUS`` of its footprint.
+        stopping within ``reach`` of its footprint.
 
         The approach point is ``standoff`` metres out from the object's *nearest
         footprint edge* toward the robot -- i.e. on the robot's own, already-open
         side. Aiming at the edge (not the object's centre, which sits inside the
         furniture's obstacle inflation and can snap to the wrong side of a wall) lets
-        the robot pull right up to a table/cabinet and be within reach of it."""
+        the robot pull right up to a table/cabinet and be within reach of it.
+
+        ``reach`` defaults to ``PICK_RADIUS`` -- stop as soon as the object itself is
+        grasp-able. Pass a smaller value to press *closer* than that. This matters when
+        the destination is a piece of furniture and the thing to be grasped is something
+        sitting on it: stopping a full ``PICK_RADIUS`` from the table spends the entire
+        reach budget before the cup's own inset from the table edge is counted, so the cup
+        ends up out of range. Approaching the table to ~a robot radius keeps the budget for
+        the cup."""
         o = self._resolve_object(obj)
         if o is None:
             return SkillResult(False, "goto_object", f"no object matching '{obj}'")
@@ -327,20 +336,21 @@ class RobotSkills:
             d = math.hypot(dx, dy) or 1.0
         ax, ay = nx + dx / d * standoff, ny + dy / d * standoff
         self._log(f"[skill] goto_object({o.name} in {o.room}) -> approach ({ax:.2f}, {ay:.2f}), "
-                  f"stop within {PICK_RADIUS:.2f} m of footprint")
-        res = self.goto(ax, ay, goal_tol=goal_tol, reach_obj=o, reach_dist=PICK_RADIUS, **kw)
+                  f"stop within {reach:.2f} m of footprint")
+        res = self.goto(ax, ay, goal_tol=goal_tol, reach_obj=o, reach_dist=reach, **kw)
         # The planner's robot-radius inflation won't let A* route the final ~0.3 m up
         # to the object, so goto can stop just outside reach. Close that last gap with
         # a short open-loop creep (safe: the physical collider stops the robot, and a
         # magic pick lifts the object away immediately after).
-        self._creep_to(o, PICK_RADIUS)
+        self._creep_to(o, reach)
         self._face(o.xy[0], o.xy[1])
         px, py = self.xy()
         dd = o.xy_dist(px, py)
-        ok = dd <= PICK_RADIUS
+        ok = dd <= reach
         return SkillResult(ok, "goto_object",
                            f"{'within' if ok else 'stopped'} {dd:.2f} m of {o.name} "
-                           f"at ({px:.2f}, {py:.2f})", data={"object": o.name})
+                           f"at ({px:.2f}, {py:.2f})",
+                           data={"object": o.name, "distance": dd, "reach": reach})
 
     def _creep_to(self, o, reach, max_ticks=90):
         """Nose straight toward object ``o`` until within ``reach`` of its footprint

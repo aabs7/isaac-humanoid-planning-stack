@@ -60,18 +60,21 @@ class MockSkills:
         return SkillResult(True, "goto_room", f"at {room} ({pt[0]:.2f}, {pt[1]:.2f})",
                            data={"room": room})
 
-    def goto_object(self, obj, **kw) -> SkillResult:
+    def goto_object(self, obj, *, reach: float = PICK_RADIUS, **kw) -> SkillResult:
         o = self._resolve_object(obj)
         if o is None:
             return SkillResult(False, "goto_object", f"no object matching '{obj}'")
-        # Stand at the object's nearest footprint edge -> within PICK_RADIUS of it,
-        # so a following pick's reach precondition is satisfied (as in the real sim).
+        # Stand at the object's nearest footprint edge -> distance 0, which satisfies any
+        # `reach` a caller asks for. The parameter exists for signature parity with
+        # RobotSkills, where pressing closer than PICK_RADIUS is the difference between
+        # being able to grasp something off a table and not; the mock has no body to get
+        # in the way, so there is nothing to model.
         rx, ry = self._xy
         nx = min(max(rx, o.bbox_min[0]), o.bbox_max[0])
         ny = min(max(ry, o.bbox_min[1]), o.bbox_max[1])
         self._xy = (nx, ny)
         return SkillResult(True, "goto_object", f"within reach of {o.name}",
-                           data={"object": o.name})
+                           data={"object": o.name, "distance": 0.0, "reach": reach})
 
     def pick(self, obj) -> SkillResult:
         if self.held is not None:

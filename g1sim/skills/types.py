@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 # for grid quantization (0.05 m cells) and pose error. It is also still physically
 # defensible: the G1's arm reaches ~0.6-0.7 m from the torso, and this is measured to
 # the footprint rather than the centre.
-PICK_RADIUS = 0.80        # robot must be within this of an object's footprint to pick (m)
+PICK_RADIUS = 1.0       # robot must be within this of an object's footprint to pick (m)
 
 # PLACE_RADIUS must NOT be smaller than PICK_RADIUS, however tempting: goto_object
 # stops the moment it is within PICK_RADIUS, so a tighter place threshold creates a
@@ -35,7 +35,7 @@ PICK_RADIUS = 0.80        # robot must be within this of an object's footprint t
 # "goto it first" -- advice it has already followed and will follow again, forever.
 # Reach is one arm, so it is one number; they are only separate to keep the call sites
 # readable.
-PLACE_RADIUS = 0.80       # robot must be within this of the place target to place (m)
+PLACE_RADIUS = 1.0      # robot must be within this of the place target to place (m)
 
 
 def dropped_pose(o, target_xy, surface_z: float):
