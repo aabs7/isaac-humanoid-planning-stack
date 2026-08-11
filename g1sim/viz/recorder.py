@@ -41,6 +41,26 @@ def _label(cell, text):
     cv2.putText(cell, text, (5, 14), _FONT, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
 
 
+def _arg_values(args):
+    """The values to caption, from whatever shape the planner passes.
+
+    A mapping (LLM planner: ``{"object": "cup_0000"}``) yields its values; a sequence
+    (symbolic planner: ``["cabinet_0009", "cup_0000"]``) yields its items; ``None`` yields
+    nothing; a bare scalar yields itself. Strings count as scalars, not sequences -- a
+    single argument must not be captioned one character at a time.
+    """
+    if args is None:
+        return []
+    if hasattr(args, "values"):
+        return list(args.values())
+    if isinstance(args, str):
+        return [args]
+    try:
+        return list(args)
+    except TypeError:
+        return [args]
+
+
 class ChaseRecorder:
     def __init__(self, sim, scene, skills, path, *, goal="", fps=15,
                  width=1280, height=720, main_w=960,
@@ -64,10 +84,17 @@ class ChaseRecorder:
         self.thought = ""
         self._walls = self._build_wall_boxes()
         self.frames = 0
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        self.path = path
+        # Resolve and announce the *absolute* destination. A relative --video is taken
+        # against the shell's cwd, and since this happily creates whatever directory it is
+        # given, a path written for one working directory silently builds a new tree
+        # somewhere else -- e.g. running from inside the project with a path meant for its
+        # parent produced isaac_task_planning/isaac_task_planning/sensor_output/. Echoing
+        # the relative path back at the user diagnoses nothing; the absolute one does.
+        self.path = os.path.abspath(path)
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        print(f"[recorder] recording to {self.path}")
         import imageio
-        self._writer = imageio.get_writer(path, fps=fps, macro_block_size=None,
+        self._writer = imageio.get_writer(self.path, fps=fps, macro_block_size=None,
                                           codec="libx264", quality=8)
         if self.cam is None:
             print("[recorder] warning: no 'record_camera' in scene; main view will be blank")
@@ -200,9 +227,15 @@ class ChaseRecorder:
 
     # -- planner mirror ---------------------------------------------------
     def set_action(self, step, skill, args, thought="", result=None):
-        """Show the planner's current action. Wire to ``Planner.on_action``; called
-        once when a step starts (``result=None``) and again when it finishes."""
-        shown = ", ".join(f"{v}" for v in (args or {}).values())
+        """Show the planner's current action. Wire to ``Planner.on_action`` or to
+        ``solve``'s ``on_dispatch``; called once when a step starts (``result=None``) and
+        again when it finishes.
+
+        ``args`` may be a mapping (the LLM planner's JSON arguments) or a plain sequence
+        (the symbolic planner's positional operator arguments) -- this is a caption, so it
+        only ever wants the values, and being strict about the container bought nothing but
+        an ``AttributeError`` at the second call site."""
+        shown = ", ".join(f"{v}" for v in _arg_values(args))
         self.action = f"[{step}] {skill}({shown})"
         self.action_state = "running..." if result is None else (
             "OK" if result.ok else f"FAILED: {result.detail}")
