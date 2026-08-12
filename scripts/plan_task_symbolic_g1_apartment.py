@@ -153,7 +153,7 @@ from g1sim.sim.locomotion import G1LocomotionPolicy
 from g1sim.skills.robot import RobotSkills
 from g1sim.task.symbolic import AStarMoveTime, G1Environment, solve
 from g1sim.task.symbolic.planner import MCTS_ITERATIONS
-from g1sim.viz.task_map import MapWindow, save_map as _save_map
+from g1sim.viz.task_map import MapWindow
 
 
 def main():
@@ -222,7 +222,8 @@ def main():
         print(outcome)
 
     if skills.mapper is not None and skills.last_free is not None and args.headless:
-        _save_map(skills, os.path.join(args.outdir, "symbolic_task_map_result.png"))
+        skills.mapper.save_png(os.path.join(args.outdir, "symbolic_task_map_result.png"),
+                               free=skills.last_free)
 
     if not args.headless:
         while simulation_app.is_running():

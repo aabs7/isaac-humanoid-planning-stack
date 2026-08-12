@@ -183,7 +183,8 @@ def main():
 
     # Save the final map the robot built.
     if skills.mapper is not None and skills.last_free is not None and args.headless:
-        _save_map(skills, os.path.join(args.outdir, "task_map_result.png"))
+        skills.mapper.save_png(os.path.join(args.outdir, "task_map_result.png"),
+                               free=skills.last_free)
 
     if not args.headless:
         while simulation_app.is_running():
@@ -200,19 +201,6 @@ def _throttled(fn, every=8):
         if state["i"] % every == 0:
             fn(s)
     return wrapped
-
-
-def _save_map(skills, path):
-    import cv2
-    import numpy as np
-    mapper = skills.mapper
-    occ = mapper.occupied()
-    img = np.full((mapper.H, mapper.W, 3), 255, np.uint8)
-    img[~skills.last_free] = (180, 180, 180)
-    img[occ] = (30, 30, 30)
-    img = np.flipud(np.ascontiguousarray(img))
-    cv2.imwrite(path, img)
-    print(f"[task] saved map -> {path}")
 
 
 if __name__ == "__main__":

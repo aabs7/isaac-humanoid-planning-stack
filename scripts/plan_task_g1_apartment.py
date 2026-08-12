@@ -56,7 +56,7 @@ from g1sim.task.llm_based.planner import Planner
 
 # Live map window + helpers (own module -- importing task_g1_apartment would re-run
 # its top-level arg parsing/launch against our argv).
-from g1sim.viz.task_map import MapWindow, save_map as _save_map
+from g1sim.viz.task_map import MapWindow
 
 
 def main():
@@ -125,7 +125,8 @@ def main():
     print(f"reason: {outcome['reason']}  ({len(outcome['steps'])} steps)")
 
     if skills.mapper is not None and skills.last_free is not None and args.headless:
-        _save_map(skills, os.path.join(args.outdir, "plan_task_map_result.png"))
+        skills.mapper.save_png(os.path.join(args.outdir, "plan_task_map_result.png"),
+                               free=skills.last_free)
 
     if not args.headless:
         while simulation_app.is_running():

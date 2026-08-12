@@ -72,17 +72,3 @@ def throttled(fn, every=8):
         if state["i"] % every == 0:
             fn(s)
     return wrapped
-
-
-def save_map(skills, path):
-    """Write the occupancy map the robot built to ``path`` (PNG)."""
-    import cv2
-    import numpy as np
-    mapper = skills.mapper
-    occ = mapper.occupied()
-    img = np.full((mapper.H, mapper.W, 3), 255, np.uint8)
-    img[~skills.last_free] = (180, 180, 180)
-    img[occ] = (30, 30, 30)
-    img = np.flipud(np.ascontiguousarray(img))
-    cv2.imwrite(path, img)
-    print(f"[task] saved map -> {path}")
