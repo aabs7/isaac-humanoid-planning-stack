@@ -61,3 +61,62 @@ class OccupancyGridMapper:
     def occupied(self):
         """Boolean grid: True where a cell has been hit at least ``hit_thresh`` times."""
         return self.counts >= self.hit_thresh
+
+    # -- persistence --------------------------------------------------------
+    # A map is expensive to build (a walking lap of the apartment) and cheap to store, and
+    # several things want one without a simulator: reachability analysis, offline planning,
+    # comparing two runs. Note what a saved map does *not* record: a cell with zero hits is
+    # "never seen" and "seen and empty" alike -- this grid has no observed/unobserved
+    # distinction. Navigation exploits that deliberately (unobserved space is treated as
+    # free, which is what makes the optimistic online planner work), but any analysis that
+    # cares about where the robot could legally *stand* should pair a loaded map with a
+    # second constraint -- a room polygon test, say -- or it will happily pick a stance in
+    # a region the lidar never reached.
+    def save(self, path: str) -> None:
+        np.savez_compressed(
+            path, counts=self.counts, res=self.res, hit_thresh=self.hit_thresh,
+            bounds=np.array([self.xmin, self.ymin, self.xmax, self.ymax]),
+            occ_band=np.array([self.z_lo, self.z_hi]))
+
+    @classmethod
+    def load(cls, path: str) -> "OccupancyGridMapper":
+        d = np.load(path)
+        m = cls(bounds=tuple(float(v) for v in d["bounds"]), res=float(d["res"]),
+                occ_band=tuple(float(v) for v in d["occ_band"]),
+                hit_thresh=int(d["hit_thresh"]))
+        m.counts = d["counts"]
+        return m
+
+    def describe(self) -> str:
+        occ = self.occupied()
+        return (f"OccupancyGrid {self.W}x{self.H} @ {self.res:.3f} m "
+                f"({self.xmin:.1f},{self.ymin:.1f})-({self.xmax:.1f},{self.ymax:.1f}): "
+                f"{int(occ.sum())} occupied cells, "
+                f"{int((self.counts > 0).sum())} cells with any return")
+
+    def save_png(self, path: str, *, free=None) -> None:
+        """Render the map to a PNG: black where occupied, white where not.
+
+        ``free`` optionally shades a boolean mask of *traversable* cells -- pass a planner's
+        inflated free grid (``plan_path``'s second return, or ``RobotSkills.last_free``) and
+        everything outside it is drawn grey, giving the familiar three-tone picture of what
+        A* could route through.
+
+        The distinction is worth keeping visible rather than baking in. Inflation is a
+        function of the robot's *radius*, applied when planning; a stored map that already
+        had it applied would freeze one particular body into the environment, and would be
+        wrong for a different robot, or the same robot carrying something wide. So the map
+        is the map, and clearance is an overlay the caller opts into.
+
+        cv2 is imported lazily so this module stays cheap to import and free of a rendering
+        dependency for anyone who only wants to fuse points.
+        """
+        import cv2
+
+        img = np.full((self.H, self.W, 3), 255, np.uint8)
+        if free is not None:
+            img[~free] = (180, 180, 180)
+        img[self.occupied()] = (30, 30, 30)
+        # Row 0 is ymin, so flip to put north up in the image.
+        cv2.imwrite(path, np.flipud(np.ascontiguousarray(img)))
+        print(f"[map] saved -> {path}")
