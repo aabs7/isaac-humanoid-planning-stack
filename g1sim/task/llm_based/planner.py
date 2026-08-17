@@ -81,20 +81,18 @@ def _catalog_text() -> str:
 SYSTEM_PROMPT = (
     "You are the task planner for a household humanoid robot. You are given a goal in "
     "plain English, a live description of the environment (a scene graph built from the "
-    "robot's map), and a set of skills. Choose ONE skill to call next, each turn, until "
-    "the goal is done.\n\n"
+    "robot's map), and a set of skills that you can perform. Choose ONE skill to call next,"
+    " each turn, until the goal is done.\n\n"
     "Skills:\n" + _catalog_text() + "\n\n"
     "Rules:\n"
     "- Only ever reference rooms and objects that appear in the CURRENT STATE. Never "
-    "invent an object.\n"
+    "invent an object or a room that is not present. \n"
     "- To reach ANY object, call goto_object directly -- it walks the whole way there "
     "itself, across rooms. Never goto_room first just to then goto_object; that wastes "
     "time and can strand the robot in a small room.\n"
-    "- To pick an object you must goto_object it first. To place: on a room's floor, "
+    "- To pick an object you must goto_object it first and then pick it. To place: on a room's floor,"
     "goto_room that room first; on top of an object, goto_object that object first.\n"
     "- You carry only one object at a time.\n"
-    "- Read each result. If a skill fails, fix the cause (usually: go to the target "
-    "first) and retry, or finish(success=false) if it is truly impossible.\n"
     "- goto_room takes a ROOM name; goto_object takes an OBJECT name/category. Do not "
     "pass a room to goto_object or an object to goto_room.\n"
     "- If an action fails, READ the failure and do something DIFFERENT next -- never "
@@ -109,31 +107,23 @@ SYSTEM_PROMPT = (
     '  finish      {"success": true, "reason": "mug delivered"}'
 )
 
-
-# ---------------------------------------------------------------------------
-# State serialization + argument grounding (both read only the semantic map).
-# ---------------------------------------------------------------------------
 def build_state_text(env) -> str:
-    """The observation shown to the LLM each turn: the scene graph, plus the robot's
-    position and what it is holding. Rebuilt every turn so it reflects moved objects."""
+    """The state of the environment as seen by the LLM."""
     smap = env.smap
     x, y = env.xy()
     if env.held is not None:
         hands = (f"IN YOUR HANDS: you are carrying '{env.held.name}'. It is NO LONGER on "
-                 f"any table or in any room -- it is in your hands. Do NOT pick it or "
-                 f"goto it again; walk to the DESTINATION and place() it there.")
+                 f"its previous location.")
     else:
         hands = "IN YOUR HANDS: nothing (hands are empty)."
-    return (f"Robot position: ({x:.2f}, {y:.2f}) -- {_robot_location_phrase(smap, x, y)}.\n"
+    return (f"Robot position: {_robot_location_phrase(smap, x, y)}.\n"
             f"{hands}\n"
             f"Rooms: {', '.join(smap.room_names())}.\n\n"
-            f"Scene graph (where each thing IS right now):\n{smap.describe_graph()}")
+            f"Scene graph (where each thing IS right now):\n{smap.describe_graph(without_nav=True)}")
 
 
 def _robot_location_phrase(smap, x: float, y: float) -> str:
-    """A human/LLM-friendly description of where the robot is standing: the room it is
-    in and the nearest furniture, e.g. "in the livingroom, near dining_table
-    [dining_table_0000]"."""
+    """ Where the robot is standing: e.g. "in the livingroom, near dining_table [dining_table_0000]"."""
     room = smap.room_at(x, y)
     parts = [f"in the {room}" if room else "between rooms (in a doorway/open space)"]
     o = smap.nearest_object(x, y, max_dist=2.0)
@@ -144,8 +134,7 @@ def _robot_location_phrase(smap, x: float, y: float) -> str:
 
 
 def _resolve_object_name(smap, ref: str):
-    """An object arg may be an exact name or a category. Return a concrete
-    SemanticObject (nearest of a category) or None."""
+    """An object arg may be an exact name or a category. Return a concrete SemanticObject (nearest of a category) or None."""
     o = smap.get(ref)
     if o is not None:
         return o
@@ -154,9 +143,11 @@ def _resolve_object_name(smap, ref: str):
 
 
 def ground(env, skill: str, args: dict):
-    """Validate a proposed action against the map. Return ``(ok, error_msg)``:
-    ``(True, None)`` if executable, else ``(False, <hint listing valid options>)``.
-    Catches hallucinated objects/rooms before they reach the robot."""
+    """Ground the proposed action against the map. Returns
+    ``(True, None)`` if action executable, else
+    ``(False, <hint listing valid options>)``.
+    This catches hallucinated objects/rooms before they reach the robot."""
+
     smap = env.smap
     if skill in ("scan", "finish"):
         return True, None
@@ -165,11 +156,6 @@ def ground(env, skill: str, args: dict):
 
     if skill == "goto_room":
         room = args.get("room")
-        # Ask the resolver the *skill* uses, rather than re-deriving the test here, so
-        # grounding accepts exactly what goto_room can execute -- including spellings
-        # navigable_point() normalizes ("living room" -> livingroom). Grounding looser
-        # than the skill lets a hallucination through; stricter (as this was) fails
-        # actions that would have worked, costing the model a turn.
         if isinstance(room, str) and smap.navigable_point(room) is not None:
             return True, None
         if room and _resolve_object_name(smap, room) is not None:  # gave an object
@@ -182,9 +168,7 @@ def ground(env, skill: str, args: dict):
         if ref and _resolve_object_name(smap, ref) is not None:
             return True, None
         if ref in smap.room_names():                               # gave a room
-            return False, (f"'{ref}' is a ROOM, not an object. To go there use "
-                           f"goto_room(room='{ref}'). To place on its floor: "
-                           f"goto_room('{ref}') then place('{ref}').")
+            return False, (f"'{ref}' is a ROOM, not an object. To go to a room, use goto_room(room='{ref}').")
         cats = ", ".join(sorted(smap.categories())) or "none"
         return False, f"no object '{ref}' in the map. Known object categories: {cats}."
 
@@ -192,14 +176,13 @@ def ground(env, skill: str, args: dict):
         loc = args.get("location")
         if not loc:
             return False, "place needs a 'location' (a room name or an object name)."
-        # Mirror _resolve_place: an object name to stack on, else a room to drop in.
         if isinstance(loc, str) and (smap.get(loc) is not None
                                      or smap.navigable_point(loc) is not None):
             return True, None
         return (False, f"cannot place at '{loc}'. Use a room "
                        f"({', '.join(smap.room_names())}) or an existing object name.")
 
-    return False, f"unknown skill '{skill}'."
+    return False, f"Unknown skill '{skill}'."
 
 
 def _execute(env, skill: str, args: dict) -> SkillResult:
@@ -245,7 +228,7 @@ class Planner:
             print(msg)
 
     def _notify(self, step, skill, args, thought, result=None):
-        """Fire the observer, never letting it break the run."""
+        """Notify the on_action observer, never letting it break the run."""
         if self.on_action is None:
             return
         try:
@@ -253,11 +236,7 @@ class Planner:
         except Exception as e:      # pragma: no cover - a display must not kill a task
             self._log(f"    (on_action observer raised: {e})")
 
-    # A crisp yes/no completion judge, asked in ISOLATION (not inside the noisy action
-    # loop). A small model reliably answers "is this goal satisfied?" from the current
-    # scene state even when it struggles to spontaneously emit `finish` mid-loop --
-    # especially with multiple same-category objects, where it loses track of which
-    # instance it just moved.
+    # Schema for goal condition.
     _DONE_SCHEMA = {
         "type": "object",
         "properties": {"done": {"type": "boolean"}, "reason": {"type": "string"}},
@@ -265,13 +244,12 @@ class Planner:
     }
 
     def _check_done(self, env, goal: str):
-        q = (f"GOAL: {goal}\n\nCURRENT STATE:\n{build_state_text(env)}\n\n"
-             "Considering ONLY the current state above, is the GOAL now fully "
-             "satisfied? An object that started elsewhere and is now in the requested "
-             "place counts as done, even if other similar objects exist elsewhere.")
+        q = (f"GOAL: {goal}\n\n "
+             f"CURRENT STATE:\n{build_state_text(env)}\n\n"
+             "Considering ONLY the CURRENT STATE above, is the GOAL now fully satisfied?")
         msgs = [{"role": "system",
                  "content": "You judge whether a household-robot task goal is already "
-                            "satisfied by the current scene. Answer strictly from the state."},
+                            "satisfied by the CURRENT STATE. Answer strictly from the CURRENT STATE."},
                 {"role": "user", "content": q}]
         try:
             ans = self.llm.chat_json(msgs, self._DONE_SCHEMA)
@@ -279,12 +257,7 @@ class Planner:
             return False, ""
         return bool(ans.get("done")), ans.get("reason", "")
 
-    # Up-front goal grounding: resolve the NL goal to CONCRETE object name(s) + one
-    # destination, done ONCE at the start while the scene is still in its initial
-    # configuration (so "the lamp on the balcony table" maps unambiguously to a single
-    # id, before any move erases that provenance). This makes the actor target a
-    # specific instance and turns completion into a deterministic check -- the key to
-    # handling multiple same-category objects on a small model.
+    # Schema for grounding a goal to concrete targets + destination.
     _GROUND_SCHEMA = {
         "type": "object",
         "properties": {
@@ -296,7 +269,7 @@ class Planner:
 
     def _ground_goal(self, env, goal: str):
         q = (f"GOAL: {goal}\n\nSCENE (objects shown as category [exact_name]):\n"
-             f"{env.smap.describe_graph()}\n\n"
+             f"{env.smap.describe_graph(without_nav=True)}\n\n"
              "Which EXACT object name(s) must be PICKED UP AND MOVED to satisfy this "
              "goal? List only the items to carry -- NOT the furniture/surface they "
              "currently sit on, and NOT the source location. If the goal names a SOURCE "
