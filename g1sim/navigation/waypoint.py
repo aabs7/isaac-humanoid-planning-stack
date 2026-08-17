@@ -49,6 +49,62 @@ class WaypointNavigator:
         heading = math.atan2(f[1].item(), f[0].item())
         return p[0].item(), p[1].item(), heading
 
+    def command_facing(self, target_xy, tol=0.06):
+        """Return ``(command, yaw_err, aligned)`` for turning in place to face a point.
+
+        Arriving at a waypoint says nothing about which way the robot ends up pointing --
+        walking north to a table that stands to the east leaves it facing the wrong way. Any
+        manipulation that follows needs the target in front of the chest, so this is a step
+        of its own rather than something ``command_to`` could fold in.
+        """
+        x, y, heading = self.pose2d()
+        yaw_err = math_utils.wrap_to_pi(
+            torch.tensor(math.atan2(target_xy[1] - y, target_xy[0] - x) - heading)).item()
+        if abs(yaw_err) < tol:
+            return self.c.command(), yaw_err, True
+        wz = max(-self.wz_max, min(self.wz_max, self.kp_yaw * yaw_err))
+        # Keep turning at a usable rate: below ~0.3 rad/s this gait barely rotates at all.
+        wz = math.copysign(max(abs(wz), 0.3), wz)
+        return self.c.command_from_se2(torch.tensor([[0.0, 0.0, wz]], device=self.device)), yaw_err, False
+
+    def command_station(self, stand_xy, face_xy, pos_tol=0.06, yaw_tol=0.10,
+                        v_min=0.35, v_max=0.6):
+        """Return ``(command, distance, on_station, )`` for holding a spot while facing a point.
+
+        A manipulating robot has to *stay* put, and a balancing humanoid does not: reaching
+        out over a counter shifts its weight and the policy answers by stepping back, tens of
+        centimetres over a few seconds of arm motion. So the standing spot gets closed-loop
+        control of its own, not a one-off arrival.
+
+        Two things this deliberately does not do. It does not hold a *radius* from the work
+        point -- that reads as "get closer" when the robot is off to one side, which walks it
+        straight into the counter. And it does not turn to walk: the error is resolved into
+        the robot's own frame and corrected with a sideways velocity, so the work stays in
+        front of the chest the whole time.
+
+        Corrections are deadbanded *and* floored, which is not the usual pairing. A
+        proportional command dies away as the error shrinks, and below roughly 0.3 m/s this
+        gait stops translating at all -- it marks time on the spot, indefinitely, while the
+        command insists it is walking. So a correction outside the deadband is issued at a
+        speed the legs actually honour, and inside it, at nothing.
+        """
+        x, y, heading = self.pose2d()
+        dx, dy = stand_xy[0] - x, stand_xy[1] - y
+        dist = math.hypot(dx, dy)
+        yaw_err = math_utils.wrap_to_pi(
+            torch.tensor(math.atan2(face_xy[1] - y, face_xy[0] - x) - heading)).item()
+        if dist < pos_tol and abs(yaw_err) < yaw_tol:
+            return self.c.command(), dist, True
+
+        cos_h, sin_h = math.cos(heading), math.sin(heading)
+        vx = vy = 0.0
+        if dist >= pos_tol:
+            speed = min(v_max, max(v_min, self.kp_lin * dist)) / dist
+            vx, vy = speed * (cos_h * dx + sin_h * dy), speed * (-sin_h * dx + cos_h * dy)
+        wz = 0.0 if abs(yaw_err) < yaw_tol else \
+            max(-self.wz_max, min(self.wz_max, self.kp_yaw * yaw_err))
+        return self.c.command_from_se2(torch.tensor([[vx, vy, wz]], device=self.device)), dist, False
+
     def command_to(self, goal_xy):
         """Return ``(command, distance, arrived)`` for the current pose and goal.
 

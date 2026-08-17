@@ -56,6 +56,16 @@ class G1LocomotionPolicy:
         self._hip = torch.full((robot.num_instances, 1), NOMINAL_HIP_HEIGHT, device=device)
         print(f"[policy] obs joints={len(self.obs_ids)} leg joints={len(self.leg_ids)} {leg_names}")
 
+    def yield_joints(self, joint_ids):
+        """Stop holding these joints at their default pose -- another controller owns them.
+
+        :meth:`step` pins every joint it does not drive, which silently overwrites whatever
+        an arm controller just wrote. Handing the joints over once at startup is safer than
+        depending on which controller writes last.
+        """
+        owned = set(joint_ids)
+        self.other_ids = [j for j in self.other_ids if j not in owned]
+
     # -- command helpers ---------------------------------------------------
     def command(self, vx=0.0, vy=0.0, wz=0.0, hip_height=None) -> torch.Tensor:
         """Assemble a ``(num_envs, 4)`` command ``[vx, vy, wz, hip_height]``."""
@@ -92,6 +102,7 @@ class G1LocomotionPolicy:
         self.last_action = raw
         leg_targets = raw * POLICY_OUTPUT_SCALE + self.default_leg_pos
         self.robot.set_joint_position_target_index(target=leg_targets, joint_ids=self.leg_ids)
-        self.robot.set_joint_position_target_index(
-            target=self.default_joint_pos[:, self.other_ids], joint_ids=self.other_ids
-        )
+        if self.other_ids:
+            self.robot.set_joint_position_target_index(
+                target=self.default_joint_pos[:, self.other_ids], joint_ids=self.other_ids
+            )
