@@ -1,3 +1,6 @@
 [submodule "third_party/railroad"]
 	path = third_party/railroad
 	url = https://github.com/RAIL-group/railroad
+[submodule "third_party/curobo"]
+	path = third_party/curobo
+	url = https://github.com/NVlabs/curobo.git

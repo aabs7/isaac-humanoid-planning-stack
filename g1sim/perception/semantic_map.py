@@ -470,10 +470,7 @@ class SemanticMap:
             lines.append(f"               {summary}")
         return "\n".join(lines)
 
-    def describe_graph(self, room: Optional[str] = None) -> str:
-        """The scene graph as an indented tree: apartment -> room -> support surface
-        -> objects-on-it, with free-standing objects listed under the room. Pass
-        ``room`` to print just one room."""
+    def describe_graph(self, room: Optional[str] = None, without_nav: bool = False) -> str:
         lines = ["apartment"]
         carried = [o for o in self.objects.values() if o.held]
         if carried:
@@ -487,16 +484,22 @@ class SemanticMap:
                 continue
             nav = self.navigable_point(rn)
             nav_s = f"({nav[0]:.2f}, {nav[1]:.2f})" if nav else "n/a"
-            lines.append(f"  room:{rn}  nav={nav_s}")
+            line = f"  room:{rn}  nav={nav_s}" if not without_nav else \
+                   f"  room:{rn}"
+            lines.append(line)
+
             room_objs = self.objects_in_room(rn)
             supports = [o for o in room_objs if o.supports]
             on_something = {n for o in supports for n in o.supports}
             for surf in sorted(supports, key=lambda o: -o.footprint_area):
-                lines.append(f"    {surf.category} [{surf.name}] "
-                             f"@({surf.xy[0]:.2f},{surf.xy[1]:.2f}) top_z={surf.top_z:.2f}")
+                line = f"    {surf.category} [{surf.name}] @({surf.xy[0]:.2f},{surf.xy[1]:.2f}) top_z={surf.top_z:.2f}" if not without_nav else \
+                       f"    {surf.category} [{surf.name}]"
+                lines.append(line)
                 for on in sorted(surf.supports):
                     o = self.objects[on]
-                    lines.append(f"      on: {o.category} [{o.name}] @({o.xy[0]:.2f},{o.xy[1]:.2f})")
+                    line = f"      on: {o.category} [{o.name}] @({o.xy[0]:.2f},{o.xy[1]:.2f})" if not without_nav else \
+                           f"      on: {o.category} [{o.name}]"
+                    lines.append(line)
             free = [o for o in room_objs if o.name not in on_something and not o.supports]
             if free:
                 lines.append("    (free-standing / floor: "
