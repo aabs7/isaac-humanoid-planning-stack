@@ -1,4 +1,12 @@
-"""A two-table world sized for a G1 to actually pick something up on.
+"""
+A two-table world sized for a G1 to actually pick something up on.
+
+Table1: size=(0.8, 1.2, 0.85), at (1.6, 0.0, 0.425)
+Table2: size=(0.8, 1.2, 0.85), at (1.6, 2.5, 0.425)
+Mug: cylinder, radius=0.04, height=0.10, at (1.45, 0.30, 0.90)
+Block: cuboid, size=(0.04, 0.04, 0.12), at (1.30, -0.14, 0.91)
+Ground: Plane at z=0.0
+
 """
 
 from isaaclab.utils.configclass import configclass
@@ -7,6 +15,19 @@ from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
 import isaaclab.sim as sim_utils
 from isaaclab_assets.robots.unitree import G1_29DOF_CFG
 
+# TODO: remove this from here, and make a robot config for all the constants
+# TODO: share with apartment scene too
+G1_DEFAULT_STANDING_POSE = {
+        ".*_hip_pitch_joint": -0.1,
+        ".*_knee_joint": 0.3,
+        ".*_ankle_pitch_joint": -0.2,
+        "left_shoulder_pitch_joint": 0.20,
+        "right_shoulder_pitch_joint": 0.20,
+        "left_shoulder_roll_joint": 0.15,
+        "right_shoulder_roll_joint": -0.15,
+        "left_elbow_joint": 0.00,
+        "right_elbow_joint": 0.00,
+    }
 
 TABLE_HEIGHT = 0.85
 TABLE_SIZE = (0.8, 1.2, TABLE_HEIGHT)
@@ -108,7 +129,8 @@ class TableTopSceneCfg(InteractiveSceneCfg):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(1.45, 0.30, TABLE_HEIGHT + 0.05)),
     )
 
-    robot = G1_29DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot = G1_29DOF_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot",
+                                 init_state=G1_29DOF_CFG.init_state.replace(joint_pos=G1_DEFAULT_STANDING_POSE))
 
 
 def build_table_top_environment(spawn_xy, device, dt: float = 1 / 200.0):
